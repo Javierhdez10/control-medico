@@ -1,0 +1,357 @@
+.panel-clinica {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--fondo);
+}
+
+.menu-lateral {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 32px 20px 24px;
+  border-right: 1px solid #edf1f5;
+  background: var(--blanco);
+}
+
+.menu-lateral .marca {
+  font-size: 20px;
+}
+
+.navegacion {
+  display: grid;
+  gap: 6px;
+  margin-top: 38px;
+}
+
+.opcion-menu {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #53647c;
+  text-align: left;
+  font-size: 13px;
+}
+
+.opcion-menu svg {
+  flex-shrink: 0;
+  color: #8b9bb2;
+}
+
+.opcion-menu:hover:not(:disabled),
+.opcion-menu.activa {
+  background: #effbf8;
+  color: #008f83;
+}
+
+.opcion-menu.activa {
+  font-weight: 600;
+}
+
+.opcion-menu.activa svg {
+  color: #008f83;
+}
+
+.opcion-menu:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.usuario-lateral {
+  display: grid;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 32px;
+  overflow-wrap: anywhere;
+}
+
+.usuario-lateral strong {
+  font-size: 12px;
+}
+
+.usuario-lateral > span {
+  color: var(--secundario);
+  font-size: 12px;
+}
+
+.usuario-lateral button {
+  margin-top: 12px;
+}
+
+.area-panel {
+  min-width: 0;
+  padding: 38px 4%;
+}
+
+.cabecera-modulo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 22px;
+  margin-bottom: 26px;
+}
+
+.cabecera-modulo h1 {
+  font-size: 25px;
+}
+
+.acciones-cabecera,
+.buscador-pacientes {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.acciones-cabecera {
+  flex-wrap: wrap;
+}
+
+.buscador-pacientes input {
+  width: 240px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid var(--borde);
+  border-radius: 5px;
+  background: white;
+  color: var(--texto);
+  font: inherit;
+  font-size: 12px;
+}
+
+.boton-ajustado {
+  width: auto;
+}
+
+.listado-pacientes {
+  overflow: hidden;
+}
+
+.tabla-desplazable {
+  overflow-x: auto;
+}
+
+.tabla-pacientes {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 12px;
+}
+
+.tabla-pacientes th {
+  padding: 17px 20px;
+  background: #f8fafc;
+  color: #53647c;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tabla-pacientes td {
+  padding: 20px;
+  border-top: 1px solid #f0f3f7;
+  color: #53647c;
+  overflow-wrap: anywhere;
+}
+
+.tabla-pacientes tbody tr:nth-child(even) {
+  background: #fafbfd;
+}
+
+.tabla-pacientes .nombre-paciente {
+  color: var(--texto);
+  font-weight: 600;
+}
+
+.tabla-pacientes .estado-tabla {
+  padding: 42px 20px;
+  text-align: center;
+}
+
+.estado {
+  display: inline-block;
+  padding: 4px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.estado.activo {
+  background: #e2f5f1;
+  color: #087e73;
+}
+
+.estado.tratamiento {
+  background: #fff1de;
+  color: #995b08;
+}
+
+.estado.inactivo {
+  background: #eef1f5;
+  color: #64748b;
+}
+
+.paginacion {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 18px 20px;
+  border-top: 1px solid var(--borde);
+  color: var(--secundario);
+  font-size: 12px;
+}
+
+.paginacion > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.paginacion button:disabled {
+  cursor: not-allowed;
+}
+
+.formulario-paciente {
+  max-width: 1050px;
+  padding: 30px;
+}
+
+.formulario-paciente fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.rejilla-formulario {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 22px;
+}
+
+.ancho-completo {
+  grid-column: 1 / -1;
+}
+
+.formulario-paciente textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px;
+  resize: vertical;
+  border: 1px solid var(--borde);
+  border-radius: 5px;
+  background: white;
+  color: var(--texto);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.formulario-paciente textarea:focus-visible {
+  outline: 3px solid #99e4dc;
+  outline-offset: 3px;
+}
+
+.formulario-paciente .mensaje {
+  margin-top: 18px;
+}
+
+.acciones-formulario {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.solo-lectores {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 850px) {
+  .panel-clinica {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+
+  .menu-lateral {
+    padding: 28px 12px;
+  }
+
+  .area-panel {
+    padding: 28px 5%;
+  }
+
+  .buscador-pacientes input {
+    width: 190px;
+  }
+}
+
+@media (max-width: 640px) {
+  .panel-clinica {
+    display: block;
+  }
+
+  .menu-lateral {
+    position: static;
+    height: auto;
+    padding: 20px 5%;
+    border-right: 0;
+    border-bottom: 1px solid var(--borde);
+  }
+
+  .navegacion {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 20px;
+  }
+
+  .opcion-menu {
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 4px;
+    font-size: 11px;
+  }
+
+  .usuario-lateral {
+    padding-top: 20px;
+  }
+
+  .usuario-lateral button {
+    justify-self: start;
+  }
+
+  .acciones-cabecera,
+  .buscador-pacientes {
+    width: 100%;
+  }
+
+  .buscador-pacientes input {
+    flex: 1;
+    width: auto;
+  }
+
+  .rejilla-formulario {
+    grid-template-columns: 1fr;
+  }
+
+  .formulario-paciente {
+    padding: 22px;
+  }
+}

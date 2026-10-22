@@ -1,0 +1,158 @@
+.resumen-cobros {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.indicador-cobro {
+  display: grid;
+  gap: 12px;
+  padding: 25px;
+}
+
+.indicador-cobro span {
+  color: var(--secundario);
+  font-size: 12px;
+}
+
+.indicador-cobro strong {
+  font-size: 29px;
+  letter-spacing: -0.6px;
+  overflow-wrap: anywhere;
+}
+
+.indicador-cobro.saldo strong {
+  color: #e84d58;
+}
+
+.alcance-cobros {
+  margin: 14px 0 24px;
+}
+
+.buscador-cobros {
+  margin-bottom: 20px;
+}
+
+.estado-cobro {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.estado-cobro.pagado {
+  background: #e2f5f1;
+  color: #087e73;
+}
+
+.estado-cobro.parcial {
+  background: #eaf0ff;
+  color: #405fa5;
+}
+
+.estado-cobro.pendiente {
+  background: #fff1de;
+  color: #995b08;
+}
+
+.detalle-cobro {
+  margin-top: 28px;
+  padding: 28px;
+}
+
+.detalle-cobro h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.formulario-pago fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 20px 0 0;
+  border: 0;
+  border-top: 1px solid var(--borde);
+}
+
+.formulario-pago legend {
+  padding: 0 10px 0 0;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.formulario-pago select,
+.formulario-pago textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 12px;
+  border: 1px solid var(--borde);
+  border-radius: 5px;
+  background: white;
+  color: var(--texto);
+  font: inherit;
+  font-size: 13px;
+}
+
+.formulario-pago textarea {
+  resize: vertical;
+}
+
+.formulario-pago select:focus-visible,
+.formulario-pago textarea:focus-visible {
+  outline: 3px solid #99e4dc;
+  outline-offset: 3px;
+}
+
+.titulo-pagos {
+  margin: 30px 0 18px;
+  font-size: 17px;
+}
+
+.historia-pagos {
+  display: grid;
+  gap: 12px;
+}
+
+.registro-pago {
+  padding: 18px;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+}
+
+.registro-pago > div {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.registro-pago strong {
+  color: var(--principal-hover);
+}
+
+.registro-pago span,
+.registro-pago p {
+  color: #53647c;
+  font-size: 12px;
+}
+
+.registro-pago p {
+  margin: 8px 0 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 850px) {
+  .resumen-cobros {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .indicador-cobro {
+    padding: 20px;
+  }
+
+  .detalle-cobro {
+    padding: 20px;
+  }
+}

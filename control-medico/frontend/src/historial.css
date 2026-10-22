@@ -1,0 +1,150 @@
+.buscador-historial {
+  margin-bottom: 20px;
+}
+
+.selector-expedientes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.selector-expediente {
+  display: grid;
+  gap: 7px;
+  padding: 15px;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: white;
+  color: var(--texto);
+  text-align: left;
+}
+
+.selector-expediente strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.selector-expediente span {
+  color: var(--secundario);
+  font-size: 12px;
+}
+
+.selector-expediente.seleccionado {
+  border-color: var(--principal);
+  background: #effbf8;
+}
+
+.paginacion-historial {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 18px 0 28px;
+  color: var(--secundario);
+  font-size: 12px;
+}
+
+.ficha-expediente {
+  padding: 25px;
+}
+
+.cabecera-expediente {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.cabecera-expediente h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+.antecedentes-expediente {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--borde);
+}
+
+.antecedentes-expediente h3,
+.registro-atencion h3 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+}
+
+.antecedentes-expediente p,
+.registro-atencion > p {
+  margin: 0;
+  color: #53647c;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.titulo-seccion-historial {
+  margin: 28px 0 18px;
+  font-size: 18px;
+}
+
+.lista-atenciones {
+  display: grid;
+  gap: 16px;
+}
+
+.registro-atencion {
+  padding: 24px;
+}
+
+.registro-atencion header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  flex-wrap: wrap;
+  gap: 15px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--borde);
+}
+
+.registro-atencion header strong {
+  color: var(--principal-hover);
+  font-size: 14px;
+}
+
+.formulario-atencion {
+  margin-top: 28px;
+}
+
+.formulario-atencion h2 {
+  margin: 0 0 24px;
+  font-size: 19px;
+}
+
+.formulario-atencion select {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 12px;
+  border: 1px solid var(--borde);
+  border-radius: 5px;
+  background: white;
+  color: var(--texto);
+  font: inherit;
+  font-size: 13px;
+}
+
+.formulario-atencion select:focus-visible {
+  outline: 3px solid #99e4dc;
+  outline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  .selector-expedientes {
+    grid-template-columns: 1fr;
+  }
+
+  .ficha-expediente,
+  .registro-atencion {
+    padding: 20px;
+  }
+}
