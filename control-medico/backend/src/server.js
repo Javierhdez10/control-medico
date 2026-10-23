@@ -8,6 +8,7 @@ import agendaRoutes from "./routes/agenda.routes.js";
 import historialRoutes from "./routes/historial.routes.js";
 import cobrosRoutes from "./routes/cobros.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
+import agendaDoctorRoutes from "./routes/agenda-doctor.routes.js";
 
 const app = express();
 
@@ -77,6 +78,7 @@ app.use("/api/agenda", agendaRoutes);
 app.use("/api/historial", historialRoutes);
 app.use("/api/cobros", cobrosRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/agenda-doctor", agendaDoctorRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
@@ -180,7 +182,7 @@ async function iniciarServidor() {
       );
 
       console.log(
-        "Módulos: autenticación, pacientes, agenda, historial, cobros y dashboard."
+        "Módulos: autenticación, pacientes, agenda, historial, cobros, dashboard y agenda del doctor."
       );
     });
 
