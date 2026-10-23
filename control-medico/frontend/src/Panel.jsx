@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { consultarApi } from "./api.js";
 import Agenda from "./Agenda.jsx";
+import AgendaDoctor from "./AgendaDoctor.jsx";
 import Historial from "./Historial.jsx";
 import Cobros from "./Cobros.jsx";
 import Dashboard from "./Dashboard.jsx";
@@ -89,6 +90,8 @@ export default function Panel({
   onCerrarSesion,
   onSesionExpirada
 }) {
+  const esDoctor = sesion.usuario.rol === "doctor";
+
   const puedeGestionar = ["admin", "recepcionista"].includes(
     sesion.usuario.rol
   );
@@ -98,11 +101,7 @@ export default function Panel({
   );
 
   const [vista, setVista] = useState(
-    sesion.usuario.rol === "doctor"
-      ? "historial"
-      : puedeGestionar
-        ? "dashboard"
-        : "inicio"
+    esDoctor ? "agenda" : puedeGestionar ? "dashboard" : "inicio"
   );
 
   const [busqueda, setBusqueda] = useState("");
@@ -120,7 +119,6 @@ export default function Panel({
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
-
   const [formulario, setFormulario] = useState({
     ...formularioVacio
   });
@@ -165,7 +163,7 @@ export default function Panel({
       }
     }
 
-    cargar();
+    void cargar();
 
     return () => {
       vigente = false;
@@ -208,9 +206,7 @@ export default function Panel({
       const respuesta = await consultarApi("/api/pacientes", {
         method: "POST",
         token: sesion.token,
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formulario)
       });
 
@@ -236,11 +232,7 @@ export default function Panel({
   }
 
   const menu = [
-    {
-      id: "inicio",
-      texto: "Inicio",
-      habilitado: true
-    },
+    { id: "inicio", texto: "Inicio", habilitado: true },
     {
       id: "dashboard",
       texto: "Dashboard",
@@ -253,8 +245,8 @@ export default function Panel({
     },
     {
       id: "agenda",
-      texto: "Agenda",
-      habilitado: puedeGestionar
+      texto: esDoctor ? "Mi agenda" : "Agenda",
+      habilitado: puedeGestionar || esDoctor
     },
     {
       id: "historial",
@@ -338,10 +330,7 @@ export default function Panel({
 
         <div className="usuario-lateral">
           <strong>{sesion.usuario.nombre}</strong>
-
-          <span>
-            {roles[sesion.usuario.rol] || sesion.usuario.rol}
-          </span>
+          <span>{roles[sesion.usuario.rol] || sesion.usuario.rol}</span>
 
           <button
             type="button"
@@ -360,7 +349,6 @@ export default function Panel({
             <header className="cabecera-modulo">
               <div>
                 <h1>Inicio</h1>
-
                 <p className="descripcion">
                   Tu cuenta en Control Médico
                 </p>
@@ -375,7 +363,6 @@ export default function Panel({
                   <dt>Correo</dt>
                   <dd>{sesion.usuario.email}</dd>
                 </div>
-
                 <div>
                   <dt>Rol</dt>
                   <dd>{roles[sesion.usuario.rol]}</dd>
@@ -399,6 +386,14 @@ export default function Panel({
           />
         )}
 
+        {vista === "agenda" && esDoctor && (
+          <AgendaDoctor
+            sesion={sesion}
+            onSesionExpirada={onSesionExpirada}
+            onAbrirHistorial={() => cambiarVista("historial")}
+          />
+        )}
+
         {vista === "historial" && puedeVerHistorial && (
           <Historial
             sesion={sesion}
@@ -418,21 +413,14 @@ export default function Panel({
             <header className="cabecera-modulo">
               <div>
                 <h1>Pacientes</h1>
-
                 <p className="descripcion">
                   Base de datos y expediente clínico
                 </p>
               </div>
 
               <div className="acciones-cabecera">
-                <form
-                  className="buscador-pacientes"
-                  onSubmit={buscar}
-                >
-                  <label
-                    className="solo-lectores"
-                    htmlFor="buscar"
-                  >
+                <form className="buscador-pacientes" onSubmit={buscar}>
+                  <label className="solo-lectores" htmlFor="buscar">
                     Buscar paciente por nombre
                   </label>
 
@@ -442,15 +430,10 @@ export default function Panel({
                     placeholder="Buscar paciente por nombre..."
                     maxLength={150}
                     value={busqueda}
-                    onChange={(evento) =>
-                      setBusqueda(evento.target.value)
-                    }
+                    onChange={(evento) => setBusqueda(evento.target.value)}
                   />
 
-                  <button
-                    type="submit"
-                    className="boton-secundario"
-                  >
+                  <button type="submit" className="boton-secundario">
                     Buscar
                   </button>
                 </form>
@@ -469,27 +452,18 @@ export default function Panel({
             </header>
 
             {aviso && (
-              <p
-                className="mensaje mensaje-aviso"
-                role="status"
-              >
+              <p className="mensaje mensaje-aviso" role="status">
                 {aviso}
               </p>
             )}
 
             {error && (
-              <div
-                className="mensaje mensaje-error"
-                role="alert"
-              >
+              <div className="mensaje mensaje-error" role="alert">
                 <p>{error}</p>
-
                 <button
                   type="button"
                   className="boton-secundario"
-                  onClick={() =>
-                    setRevision((actual) => actual + 1)
-                  }
+                  onClick={() => setRevision((actual) => actual + 1)}
                 >
                   Reintentar
                 </button>
@@ -498,10 +472,7 @@ export default function Panel({
 
             {!error && (
               <section className="tarjeta listado-pacientes">
-                <div
-                  className="tabla-desplazable"
-                  aria-busy={cargando}
-                >
+                <div className="tabla-desplazable" aria-busy={cargando}>
                   <table className="tabla-pacientes">
                     <caption className="solo-lectores">
                       Pacientes registrados
@@ -520,19 +491,13 @@ export default function Panel({
                     <tbody>
                       {cargando ? (
                         <tr>
-                          <td
-                            colSpan={5}
-                            className="estado-tabla"
-                          >
+                          <td colSpan={5} className="estado-tabla">
                             Cargando pacientes...
                           </td>
                         </tr>
                       ) : datos.pacientes.length === 0 ? (
                         <tr>
-                          <td
-                            colSpan={5}
-                            className="estado-tabla"
-                          >
+                          <td colSpan={5} className="estado-tabla">
                             {filtro
                               ? "No se encontraron pacientes con ese nombre."
                               : "Todavía no hay pacientes registrados."}
@@ -544,23 +509,11 @@ export default function Panel({
                             <td className="nombre-paciente">
                               {paciente.nombre}
                             </td>
-
+                            <td>{paciente.telefono || "Sin teléfono"}</td>
+                            <td>{paciente.email || "Sin correo"}</td>
+                            <td>{fechaVisita(paciente.ultima_visita)}</td>
                             <td>
-                              {paciente.telefono || "Sin teléfono"}
-                            </td>
-
-                            <td>
-                              {paciente.email || "Sin correo"}
-                            </td>
-
-                            <td>
-                              {fechaVisita(paciente.ultima_visita)}
-                            </td>
-
-                            <td>
-                              <span
-                                className={`estado ${paciente.estado}`}
-                              >
+                              <span className={`estado ${paciente.estado}`}>
                                 {estados[paciente.estado]}
                               </span>
                             </td>
@@ -572,18 +525,13 @@ export default function Panel({
                 </div>
 
                 <footer className="paginacion">
-                  <span>
-                    {datos.total} pacientes encontrados
-                  </span>
-
+                  <span>{datos.total} pacientes encontrados</span>
                   <div>
                     <button
                       type="button"
                       className="boton-secundario"
                       disabled={cargando || pagina === 1}
-                      onClick={() =>
-                        setPagina((actual) => actual - 1)
-                      }
+                      onClick={() => setPagina((actual) => actual - 1)}
                     >
                       Anterior
                     </button>
@@ -595,13 +543,8 @@ export default function Panel({
                     <button
                       type="button"
                       className="boton-secundario"
-                      disabled={
-                        cargando ||
-                        pagina >= datos.total_paginas
-                      }
-                      onClick={() =>
-                        setPagina((actual) => actual + 1)
-                      }
+                      disabled={cargando || pagina >= datos.total_paginas}
+                      onClick={() => setPagina((actual) => actual + 1)}
                     >
                       Siguiente
                     </button>
@@ -617,7 +560,6 @@ export default function Panel({
             <header className="cabecera-modulo">
               <div>
                 <h1>Registrar nuevo paciente</h1>
-
                 <p className="descripcion">
                   Crear una nueva ficha de expediente clínico
                 </p>
@@ -638,13 +580,9 @@ export default function Panel({
                   {camposPaciente.map((campo) => (
                     <div
                       key={campo.nombre}
-                      className={
-                        `campo ${campo.ancho ? "ancho-completo" : ""}`
-                      }
+                      className={`campo ${campo.ancho ? "ancho-completo" : ""}`}
                     >
-                      <label
-                        htmlFor={`paciente-${campo.nombre}`}
-                      >
+                      <label htmlFor={`paciente-${campo.nombre}`}>
                         {campo.etiqueta}
                       </label>
 
@@ -689,15 +627,10 @@ export default function Panel({
                   </div>
                 </div>
 
-                <p className="descripcion">
-                  * Campos obligatorios.
-                </p>
+                <p className="descripcion">* Campos obligatorios.</p>
 
                 {error && (
-                  <p
-                    className="mensaje mensaje-error"
-                    role="alert"
-                  >
+                  <p className="mensaje mensaje-error" role="alert">
                     {error}
                   </p>
                 )}
@@ -715,9 +648,7 @@ export default function Panel({
                     type="submit"
                     className="boton-principal boton-ajustado"
                   >
-                    {guardando
-                      ? "Guardando..."
-                      : "Guardar paciente"}
+                    {guardando ? "Guardando..." : "Guardar paciente"}
                   </button>
                 </div>
               </fieldset>
