@@ -4,6 +4,12 @@ import { requerirAutenticacion } from "./auth.routes.js";
 
 const router = Router();
 
+const estadosPermitidos = [
+  "activo",
+  "tratamiento",
+  "inactivo"
+];
+
 router.use(requerirAutenticacion);
 
 router.use((req, res, next) => {
@@ -23,6 +29,23 @@ function errorValidacion(mensaje) {
   const error = new Error(mensaje);
   error.status = 400;
   return error;
+}
+
+function leerId(valor) {
+  if (
+    typeof valor !== "string" ||
+    !/^[1-9]\d*$/.test(valor)
+  ) {
+    throw errorValidacion("El identificador del paciente no es válido.");
+  }
+
+  const id = Number(valor);
+
+  if (!Number.isInteger(id) || id > 2147483647) {
+    throw errorValidacion("El identificador del paciente no es válido.");
+  }
+
+  return id;
 }
 
 function leerTexto(valor, etiqueta, maximo, obligatorio = false) {
@@ -58,7 +81,9 @@ function validarFechaNacimiento(valor) {
     typeof valor !== "string" ||
     !/^\d{4}-\d{2}-\d{2}$/.test(valor)
   ) {
-    throw errorValidacion("Selecciona una fecha de nacimiento válida.");
+    throw errorValidacion(
+      "Selecciona una fecha de nacimiento válida."
+    );
   }
 
   const fecha = new Date(`${valor}T00:00:00.000Z`);
@@ -95,17 +120,110 @@ function validarFechaNacimiento(valor) {
   return valor;
 }
 
+function validarPaciente(cuerpo, esEdicion = false) {
+  if (
+    !cuerpo ||
+    typeof cuerpo !== "object" ||
+    Array.isArray(cuerpo)
+  ) {
+    throw errorValidacion("Los datos del paciente no son válidos.");
+  }
+
+  if (esEdicion) {
+    const camposRequeridos = [
+      "nombre",
+      "fecha_nacimiento",
+      "telefono",
+      "email",
+      "direccion",
+      "antecedentes",
+      "estado"
+    ];
+
+    for (const campo of camposRequeridos) {
+      if (!Object.prototype.hasOwnProperty.call(cuerpo, campo)) {
+        throw errorValidacion(
+          "La actualización está incompleta. Recarga el formulario del paciente."
+        );
+      }
+    }
+  }
+
+  const nombre = leerTexto(
+    cuerpo.nombre,
+    "El nombre",
+    150,
+    true
+  );
+
+  const fechaNacimiento = validarFechaNacimiento(
+    cuerpo.fecha_nacimiento
+  );
+
+  const telefono = leerTexto(
+    cuerpo.telefono,
+    "El teléfono",
+    25
+  );
+
+  const email = leerTexto(
+    cuerpo.email,
+    "El correo",
+    254
+  );
+
+  const direccion = leerTexto(
+    cuerpo.direccion,
+    "La dirección",
+    500
+  );
+
+  const antecedentes = leerTexto(
+    cuerpo.antecedentes,
+    "Los antecedentes",
+    5000
+  );
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw errorValidacion("El correo no tiene un formato válido.");
+  }
+
+  if (telefono && !/^[0-9+()\s.-]{7,25}$/.test(telefono)) {
+    throw errorValidacion("Revisa el formato del teléfono.");
+  }
+
+  let estado = "activo";
+
+  if (esEdicion) {
+    if (!estadosPermitidos.includes(cuerpo.estado)) {
+      throw errorValidacion("Selecciona un estado válido.");
+    }
+
+    estado = cuerpo.estado;
+  }
+
+  return {
+    nombre,
+    fechaNacimiento,
+    telefono,
+    email: email ? email.toLowerCase() : null,
+    direccion,
+    antecedentes,
+    estado
+  };
+}
+
 router.get("/", async (req, res, next) => {
   try {
-    const buscar = leerTexto(
-      req.query.buscar ?? "",
-      "La búsqueda",
-      150
-    ) || "";
+    const buscar =
+      leerTexto(req.query.buscar ?? "", "La búsqueda", 150) || "";
 
-    const paginaTexto = String(req.query.pagina ?? "1");
+    const paginaTexto = req.query.pagina ?? "1";
 
-    if (!/^[1-9]\d*$/.test(paginaTexto)) {
+    if (
+      typeof paginaTexto !== "string" ||
+      !/^[1-9]\d*$/.test(paginaTexto)
+    ) {
       throw errorValidacion("La página solicitada no es válida.");
     }
 
@@ -152,7 +270,7 @@ router.get("/", async (req, res, next) => {
 
     const total = conteo.rows[0].total;
 
-    res.json({
+    return res.json({
       correcto: true,
       pacientes: resultado.rows,
       total,
@@ -160,63 +278,50 @@ router.get("/", async (req, res, next) => {
       total_paginas: Math.max(1, Math.ceil(total / limite))
     });
   } catch (error) {
-    if (error.status === 400) {
-      return res.status(400).json({
+    next(error);
+  }
+});
+
+router.get("/:id", async (req, res, next) => {
+  try {
+    const id = leerId(req.params.id);
+
+    const resultado = await pool.query(
+      `
+        SELECT
+          id,
+          nombre,
+          to_char(fecha_nacimiento, 'YYYY-MM-DD') AS fecha_nacimiento,
+          telefono,
+          email,
+          direccion,
+          antecedentes,
+          estado
+        FROM public.pacientes
+        WHERE id = $1
+      `,
+      [id]
+    );
+
+    if (resultado.rowCount === 0) {
+      return res.status(404).json({
         correcto: false,
-        mensaje: error.message
+        mensaje: "El paciente solicitado no existe."
       });
     }
 
+    return res.json({
+      correcto: true,
+      paciente: resultado.rows[0]
+    });
+  } catch (error) {
     next(error);
   }
 });
 
 router.post("/", async (req, res, next) => {
   try {
-    const cuerpo = req.body ?? {};
-
-    const nombre = leerTexto(
-      cuerpo.nombre,
-      "El nombre",
-      150,
-      true
-    );
-
-    const fechaNacimiento = validarFechaNacimiento(
-      cuerpo.fecha_nacimiento
-    );
-
-    const telefono = leerTexto(
-      cuerpo.telefono,
-      "El teléfono",
-      25
-    );
-
-    const email = leerTexto(
-      cuerpo.email,
-      "El correo",
-      254
-    );
-
-    const direccion = leerTexto(
-      cuerpo.direccion,
-      "La dirección",
-      500
-    );
-
-    const antecedentes = leerTexto(
-      cuerpo.antecedentes,
-      "Los antecedentes",
-      5000
-    );
-
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      throw errorValidacion("El correo no tiene un formato válido.");
-    }
-
-    if (telefono && !/^[0-9+()\s.-]{7,25}$/.test(telefono)) {
-      throw errorValidacion("Revisa el formato del teléfono.");
-    }
+    const datos = validarPaciente(req.body);
 
     const resultado = await pool.query(
       `
@@ -233,30 +338,82 @@ router.post("/", async (req, res, next) => {
         RETURNING id, nombre, estado
       `,
       [
-        nombre,
-        fechaNacimiento,
-        telefono,
-        email ? email.toLowerCase() : null,
-        direccion,
-        antecedentes
+        datos.nombre,
+        datos.fechaNacimiento,
+        datos.telefono,
+        datos.email,
+        datos.direccion,
+        datos.antecedentes
       ]
     );
 
-    res.status(201).json({
+    return res.status(201).json({
       correcto: true,
       mensaje: "Paciente registrado correctamente.",
       paciente: resultado.rows[0]
     });
   } catch (error) {
-    if (error.status === 400) {
-      return res.status(400).json({
+    next(error);
+  }
+});
+
+router.put("/:id", async (req, res, next) => {
+  try {
+    const id = leerId(req.params.id);
+    const datos = validarPaciente(req.body, true);
+
+    const resultado = await pool.query(
+      `
+        UPDATE public.pacientes
+        SET
+          nombre = $1,
+          fecha_nacimiento = $2,
+          telefono = $3,
+          email = $4,
+          direccion = $5,
+          antecedentes = $6,
+          estado = $7
+        WHERE id = $8
+        RETURNING id, nombre, estado
+      `,
+      [
+        datos.nombre,
+        datos.fechaNacimiento,
+        datos.telefono,
+        datos.email,
+        datos.direccion,
+        datos.antecedentes,
+        datos.estado,
+        id
+      ]
+    );
+
+    if (resultado.rowCount === 0) {
+      return res.status(404).json({
         correcto: false,
-        mensaje: error.message
+        mensaje: "El paciente que intentas actualizar no existe."
       });
     }
 
+    return res.json({
+      correcto: true,
+      mensaje: "Paciente actualizado correctamente.",
+      paciente: resultado.rows[0]
+    });
+  } catch (error) {
     next(error);
   }
+});
+
+router.use((error, req, res, next) => {
+  if (error.status === 400) {
+    return res.status(400).json({
+      correcto: false,
+      mensaje: error.message
+    });
+  }
+
+  next(error);
 });
 
 export default router;

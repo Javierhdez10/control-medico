@@ -23,8 +23,25 @@ function hoyElSalvador() {
   return `${valor("year")}-${valor("month")}-${valor("day")}`;
 }
 
+function fechaValida(fecha) {
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(fecha) ||
+    fecha < "1900-01-01" ||
+    fecha > "2100-12-31"
+  ) {
+    return false;
+  }
+
+  const valor = new Date(`${fecha}T12:00:00Z`);
+
+  return (
+    !Number.isNaN(valor.getTime()) &&
+    valor.toISOString().slice(0, 10) === fecha
+  );
+}
+
 function moverFecha(fecha, dias) {
-  const valor = new Date(`${fecha}T12:00:00.000Z`);
+  const valor = new Date(`${fecha}T12:00:00Z`);
   valor.setUTCDate(valor.getUTCDate() + dias);
   return valor.toISOString().slice(0, 10);
 }
@@ -36,7 +53,15 @@ function describirFecha(fecha) {
     day: "numeric",
     month: "long",
     year: "numeric"
-  }).format(new Date(`${fecha}T12:00:00.000Z`));
+  }).format(new Date(`${fecha}T12:00:00Z`));
+}
+
+function fechaHora(valor) {
+  return new Intl.DateTimeFormat("es-SV", {
+    timeZone: "America/El_Salvador",
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(new Date(valor));
 }
 
 function dinero(valor) {
@@ -46,10 +71,7 @@ function dinero(valor) {
   }).format(Number(valor));
 }
 
-export default function Agenda({
-  token,
-  onSesionExpirada
-}) {
+export default function Agenda({ token, onSesionExpirada }) {
   const [doctores, setDoctores] = useState([]);
   const [doctorId, setDoctorId] = useState("");
   const [fecha, setFecha] = useState(hoyElSalvador);
@@ -74,7 +96,7 @@ export default function Agenda({
   const [errorPacientes, setErrorPacientes] = useState("");
 
   const [duracion, setDuracion] = useState("30");
-  const [horarios, setHorarios] = useState([]);
+  const [resultadoHorarios, setResultadoHorarios] = useState(null);
   const [seleccionHorario, setSeleccionHorario] = useState(null);
   const [cargandoHorarios, setCargandoHorarios] = useState(false);
   const [errorHorarios, setErrorHorarios] = useState("");
@@ -84,12 +106,24 @@ export default function Agenda({
   const [procesando, setProcesando] = useState(false);
   const [errorAccion, setErrorAccion] = useState("");
   const [aviso, setAviso] = useState("");
+  const [citaEditando, setCitaEditando] = useState(null);
+
+  const esReprogramacion = vista === "reprogramar";
+  const esFormulario = vista === "nueva" || esReprogramacion;
+  const fechaCorrecta = fechaValida(fecha);
 
   const claveHorario =
-    `${doctorId}|${fecha}|${duracion}|${paciente?.id || ""}`;
+    `${vista}|${doctorId}|${fecha}|${duracion}|` +
+    `${paciente?.id || ""}|${citaEditando?.id || ""}|${revision}`;
+
+  const horarios =
+    resultadoHorarios?.clave === claveHorario
+      ? resultadoHorarios.horarios
+      : [];
 
   const horaElegida =
-    seleccionHorario?.clave === claveHorario
+    seleccionHorario?.clave === claveHorario &&
+    horarios.some((item) => item.hora === seleccionHorario.hora)
       ? seleccionHorario.hora
       : "";
 
@@ -105,21 +139,12 @@ export default function Agenda({
           token
         });
 
-        if (!vigente) {
-          return;
-        }
-
-        setDoctores(datos.doctores);
-
-        setDoctorId((actual) => {
-          const existe = datos.doctores.some(
-            (doctor) => String(doctor.id) === actual
+        if (vigente) {
+          setDoctores(datos.doctores);
+          setDoctorId((actual) =>
+            actual || String(datos.doctores[0]?.id || "")
           );
-
-          return existe
-            ? actual
-            : String(datos.doctores[0]?.id || "");
-        });
+        }
       } catch (error) {
         if (vigente) {
           if (error.status === 401) {
@@ -135,7 +160,7 @@ export default function Agenda({
       }
     }
 
-    cargarDoctores();
+    void cargarDoctores();
 
     return () => {
       vigente = false;
@@ -143,7 +168,7 @@ export default function Agenda({
   }, [token, onSesionExpirada, revision]);
 
   useEffect(() => {
-    if (!doctorId || !fecha || vista !== "lista") {
+    if (!doctorId || !fechaCorrecta || vista !== "lista") {
       return undefined;
     }
 
@@ -152,6 +177,7 @@ export default function Agenda({
 
     setCargandoCitas(true);
     setErrorCitas("");
+    setCitas([]);
 
     async function cargarCitas() {
       try {
@@ -185,7 +211,7 @@ export default function Agenda({
       }
     }
 
-    cargarCitas();
+    void cargarCitas();
 
     return () => {
       vigente = false;
@@ -194,6 +220,7 @@ export default function Agenda({
   }, [
     doctorId,
     fecha,
+    fechaCorrecta,
     vista,
     revision,
     token,
@@ -240,7 +267,7 @@ export default function Agenda({
       }
     }
 
-    cargarPacientes();
+    void cargarPacientes();
 
     return () => {
       vigente = false;
@@ -255,7 +282,12 @@ export default function Agenda({
   ]);
 
   useEffect(() => {
-    if (vista !== "nueva" || !doctorId || !fecha || !paciente) {
+    if (
+      !esFormulario ||
+      !doctorId ||
+      !fechaCorrecta ||
+      !paciente
+    ) {
       return undefined;
     }
 
@@ -264,32 +296,40 @@ export default function Agenda({
 
     setCargandoHorarios(true);
     setErrorHorarios("");
-    setHorarios([]);
+    setResultadoHorarios(null);
 
     async function cargarHorarios() {
       try {
         const parametros = new URLSearchParams({
-          doctor_id: doctorId,
-          paciente_id: String(paciente.id),
           fecha,
           duracion
         });
 
-        const datos = await consultarApi(
-          `/api/agenda/disponibilidad?${parametros}`,
-          { token }
-        );
+        let ruta;
+
+        if (esReprogramacion) {
+          ruta =
+            `/api/agenda/citas/${citaEditando.id}/disponibilidad?` +
+            parametros;
+        } else {
+          parametros.set("doctor_id", doctorId);
+          parametros.set("paciente_id", String(paciente.id));
+          ruta = `/api/agenda/disponibilidad?${parametros}`;
+        }
+
+        const datos = await consultarApi(ruta, { token });
 
         if (vigente) {
-          setHorarios(datos.horarios);
+          setResultadoHorarios({
+            clave: claveHorario,
+            horarios: datos.horarios
+          });
           setErrorHorarios("");
 
           setSeleccionHorario((actual) => {
             if (
               actual?.clave === claveHorario &&
-              !datos.horarios.some(
-                (horario) => horario.hora === actual.hora
-              )
+              !datos.horarios.some((item) => item.hora === actual.hora)
             ) {
               return null;
             }
@@ -299,6 +339,8 @@ export default function Agenda({
         }
       } catch (error) {
         if (vigente) {
+          setResultadoHorarios(null);
+
           if (error.status === 401) {
             onSesionExpirada();
           } else {
@@ -313,33 +355,69 @@ export default function Agenda({
       }
     }
 
-    cargarHorarios();
+    void cargarHorarios();
 
     return () => {
       vigente = false;
       clearTimeout(temporizador);
     };
   }, [
-    vista,
+    esFormulario,
+    esReprogramacion,
     doctorId,
     fecha,
+    fechaCorrecta,
     duracion,
     paciente,
+    citaEditando,
     claveHorario,
-    revision,
     token,
     onSesionExpirada
   ]);
 
   function abrirNuevaCita() {
+    setCitaEditando(null);
     setPaciente(null);
     setBusqueda("");
     setFiltroPaciente("");
     setPaginaPaciente(1);
     setDuracion("30");
     setSeleccionHorario(null);
+    setResultadoHorarios(null);
     setMotivo("");
     setImporte("0.00");
+    setErrorAccion("");
+    setErrorHorarios("");
+    setAviso("");
+
+    if (!fechaCorrecta || fecha < hoyElSalvador()) {
+      setFecha(hoyElSalvador());
+    }
+
+    setVista("nueva");
+  }
+
+  function abrirReprogramacion(cita) {
+    if (procesando) {
+      return;
+    }
+
+    setCitaEditando({
+      ...cita,
+      fechaOrigen: fecha,
+      doctorNombre: doctorActual?.nombre || "Doctor asignado"
+    });
+
+    setPaciente({
+      id: cita.paciente_id,
+      nombre: cita.paciente
+    });
+
+    setDoctorId(String(cita.doctor_id));
+    setDuracion(String(cita.duracion));
+    setSeleccionHorario(null);
+    setResultadoHorarios(null);
+    setErrorHorarios("");
     setErrorAccion("");
     setAviso("");
 
@@ -347,7 +425,23 @@ export default function Agenda({
       setFecha(hoyElSalvador());
     }
 
-    setVista("nueva");
+    setVista("reprogramar");
+  }
+
+  function cancelarFormulario() {
+    if (procesando) {
+      return;
+    }
+
+    if (citaEditando) {
+      setFecha(citaEditando.fechaOrigen);
+    }
+
+    setCitaEditando(null);
+    setSeleccionHorario(null);
+    setErrorAccion("");
+    setVista("lista");
+    setRevision((actual) => actual + 1);
   }
 
   function buscarPaciente() {
@@ -363,8 +457,18 @@ export default function Agenda({
       return;
     }
 
-    if (!paciente || !horaElegida) {
-      setErrorAccion("Selecciona un paciente y un horario disponible.");
+    if (!paciente || !horaElegida || !fechaCorrecta) {
+      setErrorAccion("Selecciona un paciente, una fecha y un horario disponible.");
+      return;
+    }
+
+    if (
+      esReprogramacion &&
+      !window.confirm(
+        `¿Reprogramar la cita de ${paciente.nombre} para el ` +
+        `${fecha} a las ${horaElegida}, con duración de ${duracion} minutos?`
+      )
+    ) {
       return;
     }
 
@@ -372,24 +476,38 @@ export default function Agenda({
     setErrorAccion("");
 
     try {
-      const datos = await consultarApi("/api/agenda/citas", {
-        method: "POST",
+      const ruta = esReprogramacion
+        ? `/api/agenda/citas/${citaEditando.id}/reprogramar`
+        : "/api/agenda/citas";
+
+      const cuerpo = esReprogramacion
+        ? {
+            fecha,
+            hora: horaElegida,
+            duracion: Number(duracion),
+            fecha_hora_original: citaEditando.fecha_hora,
+            fecha_hora_fin_original: citaEditando.fecha_hora_fin,
+            estado_original: citaEditando.estado
+          }
+        : {
+            doctor_id: Number(doctorId),
+            paciente_id: paciente.id,
+            fecha,
+            hora: horaElegida,
+            duracion: Number(duracion),
+            motivo,
+            importe_total: importe
+          };
+
+      const datos = await consultarApi(ruta, {
+        method: esReprogramacion ? "PATCH" : "POST",
         token,
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          doctor_id: Number(doctorId),
-          paciente_id: paciente.id,
-          fecha,
-          hora: horaElegida,
-          duracion: Number(duracion),
-          motivo,
-          importe_total: importe
-        })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cuerpo)
       });
 
       setAviso(datos.mensaje);
+      setCitaEditando(null);
       setVista("lista");
       setRevision((actual) => actual + 1);
     } catch (error) {
@@ -454,9 +572,7 @@ export default function Agenda({
         {
           method: "PATCH",
           token,
-          headers: {
-            "Content-Type": "application/json"
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(cuerpo)
         }
       );
@@ -484,12 +600,18 @@ export default function Agenda({
       <header className="cabecera-modulo">
         <div>
           <h1>
-            {vista === "nueva" ? "Agendar nueva cita" : "Agenda de citas"}
+            {esReprogramacion
+              ? "Reprogramar cita"
+              : vista === "nueva"
+                ? "Agendar nueva cita"
+                : "Agenda de citas"}
           </h1>
           <p className="descripcion">
-            {vista === "nueva"
-              ? "Selecciona un paciente y un horario disponible"
-              : "Gestión de citas y horarios clínicos"}
+            {esReprogramacion
+              ? "Selecciona la nueva fecha, duración y hora"
+              : vista === "nueva"
+                ? "Selecciona un paciente y un horario disponible"
+                : "Gestión de citas y horarios clínicos"}
           </p>
         </div>
 
@@ -499,7 +621,8 @@ export default function Agenda({
             className="boton-principal boton-ajustado"
             onClick={abrirNuevaCita}
             disabled={
-              !doctorId || cargandoDoctores || procesando
+              !doctorActual || cargandoDoctores ||
+              procesando || Boolean(errorDoctores)
             }
           >
             + Nueva cita
@@ -513,52 +636,62 @@ export default function Agenda({
         </p>
       )}
 
-      {!cargandoDoctores &&
-        !errorDoctores &&
-        doctores.length === 0 && (
-          <p className="mensaje mensaje-aviso" role="status">
-            No hay doctores activos disponibles.
-          </p>
-        )}
+      {!cargandoDoctores && !errorDoctores && doctores.length === 0 && (
+        <p className="mensaje mensaje-aviso">
+          No hay doctores activos disponibles.
+        </p>
+      )}
 
       <div className="tarjeta filtros-agenda">
         <div className="campo">
           <label htmlFor="doctor-agenda">Doctor</label>
-          <select
-            id="doctor-agenda"
-            value={doctorId}
-            onChange={(evento) => {
-              setDoctorId(evento.target.value);
-              setSeleccionHorario(null);
-              setErrorAccion("");
-            }}
-            disabled={cargandoDoctores || procesando}
-          >
-            <option value="">
-              {cargandoDoctores ? "Cargando doctores..." : "Selecciona un doctor"}
-            </option>
-            {doctores.map((doctor) => (
-              <option key={doctor.id} value={doctor.id}>
-                {doctor.nombre} — {doctor.especialidad}
+          {esReprogramacion ? (
+            <input
+              id="doctor-agenda"
+              value={citaEditando.doctorNombre}
+              readOnly
+            />
+          ) : (
+            <select
+              id="doctor-agenda"
+              value={doctorId}
+              onChange={(evento) => {
+                setDoctorId(evento.target.value);
+                setCitas([]);
+                setSeleccionHorario(null);
+                setErrorAccion("");
+              }}
+              disabled={cargandoDoctores || procesando}
+            >
+              <option value="">
+                {cargandoDoctores
+                  ? "Cargando doctores..."
+                  : "Selecciona un doctor"}
               </option>
-            ))}
-          </select>
+              {doctores.map((doctor) => (
+                <option key={doctor.id} value={doctor.id}>
+                  {doctor.nombre} — {doctor.especialidad}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div className="campo">
-          <label htmlFor="fecha-agenda">Fecha</label>
+          <label htmlFor="fecha-agenda">
+            {esReprogramacion ? "Nueva fecha" : "Fecha"}
+          </label>
           <input
             id="fecha-agenda"
             type="date"
-            min={vista === "nueva" ? hoyElSalvador() : "1900-01-01"}
+            min={esFormulario ? hoyElSalvador() : "1900-01-01"}
             max="2100-12-31"
             value={fecha}
             onChange={(evento) => {
-              if (evento.target.value) {
-                setFecha(evento.target.value);
-                setSeleccionHorario(null);
-                setErrorAccion("");
-              }
+              setFecha(evento.target.value);
+              setCitas([]);
+              setSeleccionHorario(null);
+              setErrorAccion("");
             }}
             disabled={procesando}
           />
@@ -574,13 +707,19 @@ export default function Agenda({
         </button>
       </div>
 
+      {!fechaCorrecta && (
+        <p className="mensaje mensaje-error" role="alert">
+          Selecciona una fecha válida entre 1900 y 2100.
+        </p>
+      )}
+
       {aviso && (
         <p className="mensaje mensaje-aviso" role="status">
           {aviso}
         </p>
       )}
 
-      {vista === "lista" && (
+      {vista === "lista" && fechaCorrecta && (
         <div className="tarjeta tarjeta-agenda">
           <header className="fecha-agenda">
             <div>
@@ -594,26 +733,33 @@ export default function Agenda({
               <button
                 type="button"
                 className="boton-secundario"
-                onClick={() => setFecha(moverFecha(fecha, -1))}
                 disabled={procesando || fecha <= "1900-01-01"}
-                aria-label="Día anterior"
+                onClick={() => {
+                  setCitas([]);
+                  setFecha(moverFecha(fecha, -1));
+                }}
               >
                 Anterior
               </button>
               <button
                 type="button"
                 className="boton-secundario"
-                onClick={() => setFecha(hoyElSalvador())}
                 disabled={procesando}
+                onClick={() => {
+                  setFecha(hoyElSalvador());
+                  setRevision((actual) => actual + 1);
+                }}
               >
                 Hoy
               </button>
               <button
                 type="button"
                 className="boton-secundario"
-                onClick={() => setFecha(moverFecha(fecha, 1))}
                 disabled={procesando || fecha >= "2100-12-31"}
-                aria-label="Día siguiente"
+                onClick={() => {
+                  setCitas([]);
+                  setFecha(moverFecha(fecha, 1));
+                }}
               >
                 Siguiente
               </button>
@@ -635,9 +781,7 @@ export default function Agenda({
               Cargando citas...
             </p>
           ) : !doctorId ? (
-            <p className="vacio-agenda">
-              Selecciona un doctor para consultar su agenda.
-            </p>
+            <p className="vacio-agenda">Selecciona un doctor.</p>
           ) : citas.length === 0 ? (
             <p className="vacio-agenda">
               No hay citas registradas para esta fecha.
@@ -659,6 +803,7 @@ export default function Agenda({
                       <p>{cita.motivo}</p>
                       <span>
                         {cita.duracion} min · {dinero(cita.importe_total)}
+                        {" · "}Cita #{cita.id}
                       </span>
 
                       {cita.motivo_cancelacion && (
@@ -677,9 +822,7 @@ export default function Agenda({
                         <button
                           type="button"
                           className="boton-secundario"
-                          onClick={() =>
-                            cambiarEstado(cita, "confirmada")
-                          }
+                          onClick={() => cambiarEstado(cita, "confirmada")}
                           disabled={procesando}
                         >
                           Confirmar
@@ -687,16 +830,25 @@ export default function Agenda({
                       )}
 
                       {["pendiente", "confirmada"].includes(cita.estado) && (
-                        <button
-                          type="button"
-                          className="boton-secundario boton-cancelar-cita"
-                          onClick={() =>
-                            cambiarEstado(cita, "cancelada")
-                          }
-                          disabled={procesando}
-                        >
-                          Cancelar
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="boton-secundario"
+                            onClick={() => abrirReprogramacion(cita)}
+                            disabled={procesando}
+                          >
+                            Reprogramar
+                          </button>
+
+                          <button
+                            type="button"
+                            className="boton-secundario boton-cancelar-cita"
+                            onClick={() => cambiarEstado(cita, "cancelada")}
+                            disabled={procesando}
+                          >
+                            Cancelar
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -707,7 +859,7 @@ export default function Agenda({
         </div>
       )}
 
-      {vista === "nueva" && (
+      {esFormulario && (
         <form
           className="tarjeta formulario-paciente formulario-cita"
           onSubmit={guardarCita}
@@ -715,111 +867,137 @@ export default function Agenda({
         >
           <fieldset disabled={procesando}>
             <legend className="solo-lectores">
-              Datos de la nueva cita
+              {esReprogramacion ? "Reprogramación de cita" : "Nueva cita"}
             </legend>
 
-            <div className="campo">
-              <label htmlFor="buscar-paciente-cita">
-                Buscar paciente por nombre
-              </label>
-              <div className="buscar-paciente-cita">
-                <input
-                  id="buscar-paciente-cita"
-                  value={busqueda}
-                  onChange={(evento) =>
-                    setBusqueda(evento.target.value)
-                  }
-                  onKeyDown={(evento) => {
-                    if (evento.key === "Enter") {
-                      evento.preventDefault();
-                      buscarPaciente();
-                    }
-                  }}
-                  maxLength={150}
-                  placeholder="Escribe un nombre..."
-                />
-                <button
-                  type="button"
-                  className="boton-secundario"
-                  onClick={buscarPaciente}
-                >
-                  Buscar
-                </button>
-              </div>
-            </div>
-
-            {errorPacientes && (
-              <p className="mensaje mensaje-error" role="alert">
-                {errorPacientes}
-              </p>
-            )}
-
-            <div className="resultados-pacientes" aria-busy={cargandoPacientes}>
-              {cargandoPacientes ? (
-                <p className="descripcion">Buscando pacientes...</p>
-              ) : resultadoPacientes.pacientes.length === 0 ? (
-                <p className="descripcion">
-                  No se encontraron pacientes.
+            {esReprogramacion ? (
+              <div className="mensaje mensaje-aviso">
+                <p>
+                  <strong>Paciente:</strong> {paciente.nombre}
                 </p>
-              ) : (
-                resultadoPacientes.pacientes.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`resultado-paciente ${
-                      paciente?.id === item.id ? "seleccionado" : ""
-                    }`}
-                    onClick={() => {
-                      setPaciente(item);
-                      setSeleccionHorario(null);
-                      setErrorAccion("");
-                    }}
-                    disabled={item.estado === "inactivo"}
-                    aria-pressed={paciente?.id === item.id}
+                <p>
+                  <strong>Cita:</strong> #{citaEditando.id}
+                  {" · "}{nombresEstados[citaEditando.estado]}
+                </p>
+                <p>
+                  <strong>Horario original:</strong>{" "}
+                  {fechaHora(citaEditando.fecha_hora)}
+                  {" · "}{citaEditando.duracion} minutos
+                </p>
+                <p>
+                  <strong>Motivo:</strong> {citaEditando.motivo}
+                </p>
+                <p>
+                  <strong>Importe:</strong>{" "}
+                  {dinero(citaEditando.importe_total)}
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="campo">
+                  <label htmlFor="buscar-paciente-cita">
+                    Buscar paciente por nombre
+                  </label>
+                  <div className="buscar-paciente-cita">
+                    <input
+                      id="buscar-paciente-cita"
+                      value={busqueda}
+                      onChange={(evento) => setBusqueda(evento.target.value)}
+                      onKeyDown={(evento) => {
+                        if (evento.key === "Enter") {
+                          evento.preventDefault();
+                          buscarPaciente();
+                        }
+                      }}
+                      maxLength={150}
+                      placeholder="Escribe un nombre..."
+                    />
+                    <button
+                      type="button"
+                      className="boton-secundario"
+                      onClick={buscarPaciente}
+                    >
+                      Buscar
+                    </button>
+                  </div>
+                </div>
+
+                {errorPacientes && (
+                  <p className="mensaje mensaje-error" role="alert">
+                    {errorPacientes}
+                  </p>
+                )}
+
+                {!errorPacientes && (
+                  <div
+                    className="resultados-pacientes"
+                    aria-busy={cargandoPacientes}
                   >
-                    <strong>{item.nombre}</strong>
-                    <span>
-                      ID {item.id} · {item.telefono || "Sin teléfono"}
-                      {item.estado === "inactivo" ? " · Inactivo" : ""}
-                    </span>
+                    {cargandoPacientes ? (
+                      <p className="descripcion">Buscando pacientes...</p>
+                    ) : resultadoPacientes.pacientes.length === 0 ? (
+                      <p className="descripcion">
+                        No se encontraron pacientes.
+                      </p>
+                    ) : (
+                      resultadoPacientes.pacientes.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className={`resultado-paciente ${
+                            paciente?.id === item.id ? "seleccionado" : ""
+                          }`}
+                          onClick={() => {
+                            setPaciente(item);
+                            setSeleccionHorario(null);
+                            setErrorAccion("");
+                          }}
+                          disabled={item.estado === "inactivo"}
+                          aria-pressed={paciente?.id === item.id}
+                        >
+                          <strong>{item.nombre}</strong>
+                          <span>
+                            ID {item.id} · {item.telefono || "Sin teléfono"}
+                            {item.estado === "inactivo" ? " · Inactivo" : ""}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                <div className="paginacion-selector">
+                  <button
+                    type="button"
+                    className="boton-secundario"
+                    disabled={cargandoPacientes || paginaPaciente === 1}
+                    onClick={() => setPaginaPaciente((actual) => actual - 1)}
+                  >
+                    Anterior
                   </button>
-                ))
-              )}
-            </div>
+                  <span>
+                    Página {paginaPaciente} de{" "}
+                    {resultadoPacientes.total_paginas}
+                  </span>
+                  <button
+                    type="button"
+                    className="boton-secundario"
+                    disabled={
+                      cargandoPacientes ||
+                      paginaPaciente >= resultadoPacientes.total_paginas
+                    }
+                    onClick={() => setPaginaPaciente((actual) => actual + 1)}
+                  >
+                    Siguiente
+                  </button>
+                </div>
 
-            <div className="paginacion-selector">
-              <button
-                type="button"
-                className="boton-secundario"
-                disabled={cargandoPacientes || paginaPaciente === 1}
-                onClick={() =>
-                  setPaginaPaciente((actual) => actual - 1)
-                }
-              >
-                Anterior
-              </button>
-              <span>
-                Página {paginaPaciente} de {resultadoPacientes.total_paginas}
-              </span>
-              <button
-                type="button"
-                className="boton-secundario"
-                disabled={
-                  cargandoPacientes ||
-                  paginaPaciente >= resultadoPacientes.total_paginas
-                }
-                onClick={() =>
-                  setPaginaPaciente((actual) => actual + 1)
-                }
-              >
-                Siguiente
-              </button>
-            </div>
-
-            {paciente && (
-              <p className="mensaje mensaje-aviso">
-                Paciente seleccionado: <strong>{paciente.nombre}</strong>
-              </p>
+                {paciente && (
+                  <p className="mensaje mensaje-aviso">
+                    Paciente seleccionado: <strong>{paciente.nombre}</strong>
+                  </p>
+                )}
+              </>
             )}
 
             <div className="rejilla-formulario">
@@ -833,40 +1011,44 @@ export default function Agenda({
                     setSeleccionHorario(null);
                   }}
                 >
-                  <option value="15">15 minutos</option>
-                  <option value="30">30 minutos</option>
-                  <option value="45">45 minutos</option>
-                  <option value="60">60 minutos</option>
+                  {[15, 30, 45, 60].map((minutos) => (
+                    <option key={minutos} value={minutos}>
+                      {minutos} minutos
+                    </option>
+                  ))}
                 </select>
               </div>
 
-              <div className="campo">
-                <label htmlFor="importe-cita">Importe de la cita ($)</label>
-                <input
-                  id="importe-cita"
-                  type="number"
-                  min="0"
-                  max="99999999.99"
-                  step="0.01"
-                  value={importe}
-                  onChange={(evento) => setImporte(evento.target.value)}
-                  required
-                />
-              </div>
+              {!esReprogramacion && (
+                <div className="campo">
+                  <label htmlFor="importe-cita">Importe de la cita ($)</label>
+                  <input
+                    id="importe-cita"
+                    type="number"
+                    min="0"
+                    max="99999999.99"
+                    step="0.01"
+                    value={importe}
+                    onChange={(evento) => setImporte(evento.target.value)}
+                    required
+                  />
+                </div>
+              )}
             </div>
 
             <div className="campo">
               <p className="titulo-horarios">Horarios disponibles</p>
 
-              {!paciente || !doctorId ? (
+              {!paciente || !doctorId || !fechaCorrecta ? (
                 <p className="descripcion">
-                  Selecciona el doctor y el paciente para consultar horarios.
+                  Selecciona doctor, paciente y una fecha válida.
                 </p>
               ) : errorHorarios ? (
                 <p className="mensaje mensaje-error" role="alert">
                   {errorHorarios}
                 </p>
-              ) : cargandoHorarios ? (
+              ) : cargandoHorarios ||
+                resultadoHorarios?.clave !== claveHorario ? (
                 <p className="descripcion" role="status">
                   Consultando disponibilidad...
                 </p>
@@ -898,18 +1080,20 @@ export default function Agenda({
               )}
             </div>
 
-            <div className="campo">
-              <label htmlFor="motivo-cita">Motivo de consulta *</label>
-              <textarea
-                id="motivo-cita"
-                value={motivo}
-                onChange={(evento) => setMotivo(evento.target.value)}
-                rows={3}
-                maxLength={2000}
-                placeholder="Describe el motivo de la cita..."
-                required
-              />
-            </div>
+            {!esReprogramacion && (
+              <div className="campo">
+                <label htmlFor="motivo-cita">Motivo de consulta *</label>
+                <textarea
+                  id="motivo-cita"
+                  value={motivo}
+                  onChange={(evento) => setMotivo(evento.target.value)}
+                  rows={3}
+                  maxLength={2000}
+                  placeholder="Describe el motivo de la cita..."
+                  required
+                />
+              </div>
+            )}
 
             {errorAccion && (
               <p className="mensaje mensaje-error" role="alert">
@@ -921,12 +1105,9 @@ export default function Agenda({
               <button
                 type="button"
                 className="boton-secundario"
-                onClick={() => {
-                  setVista("lista");
-                  setErrorAccion("");
-                }}
+                onClick={cancelarFormulario}
               >
-                Cancelar
+                {esReprogramacion ? "Cancelar cambios" : "Cancelar"}
               </button>
               <button
                 type="submit"
@@ -934,12 +1115,17 @@ export default function Agenda({
                 disabled={
                   !paciente ||
                   !horaElegida ||
+                  !fechaCorrecta ||
                   cargandoHorarios ||
                   Boolean(errorHorarios) ||
                   !doctorId
                 }
               >
-                {procesando ? "Guardando..." : "Agendar cita"}
+                {procesando
+                  ? "Guardando..."
+                  : esReprogramacion
+                    ? "Guardar nuevo horario"
+                    : "Agendar cita"}
               </button>
             </div>
           </fieldset>

@@ -1,0 +1,188 @@
+.modulo-doctores {
+  color: #263247;
+}
+
+.doc-buscador {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.doc-buscador input {
+  flex: 1;
+  min-width: 200px;
+  padding: 11px 14px;
+  border: 1px solid #dbe3ed;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #263247;
+  font: inherit;
+}
+
+.doc-listado {
+  overflow: hidden;
+}
+
+.doc-registro {
+  padding: 24px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.doc-registro-cabecera {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.doc-registro-cabecera h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.doc-registro-cabecera p {
+  margin: 7px 0 0;
+  color: #71839d;
+  font-size: 14px;
+}
+
+.doc-estado {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.doc-estado-activo {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.doc-estado-inactivo {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.doc-datos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin: 22px 0;
+}
+
+.doc-datos dt {
+  margin-bottom: 5px;
+  color: #71839d;
+  font-size: 12px;
+}
+
+.doc-datos dd {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.doc-horarios {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.doc-horarios ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.doc-horarios li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.doc-horarios li span {
+  color: #64748b;
+}
+
+.doc-vacio {
+  padding: 35px 20px;
+  color: #71839d;
+  text-align: center;
+}
+
+.doc-formulario h2 {
+  margin: 0 0 18px;
+  font-size: 18px;
+}
+
+.doc-formulario .doc-titulo-seccion {
+  margin-top: 30px;
+}
+
+.doc-checkbox,
+.doc-dia {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.doc-checkbox {
+  margin-top: 16px;
+}
+
+.doc-checkbox input,
+.doc-dia input {
+  width: 17px;
+  height: 17px;
+  accent-color: #0d9488;
+}
+
+.doc-dias {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.doc-dia {
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.doc-buscador input:focus-visible {
+  outline: 3px solid #99f6e4;
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .doc-registro {
+    padding: 18px;
+  }
+
+  .doc-registro-cabecera {
+    flex-direction: column;
+  }
+
+  .doc-datos,
+  .doc-horarios ul {
+    grid-template-columns: 1fr;
+  }
+
+  .doc-buscador input {
+    width: 100%;
+    flex-basis: 100%;
+  }
+}

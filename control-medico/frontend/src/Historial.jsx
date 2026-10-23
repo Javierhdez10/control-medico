@@ -19,6 +19,18 @@ function fechaNacimiento(valor) {
   return `${dia}/${mes}/${anio}`;
 }
 
+function identificadorValido(valor) {
+  const numero = Number(valor);
+
+  return (
+    Number.isInteger(numero) &&
+    numero > 0 &&
+    numero <= 2147483647
+  )
+    ? numero
+    : null;
+}
+
 function FormularioAtencion({
   citas,
   tratamientos,
@@ -83,8 +95,8 @@ function FormularioAtencion({
   if (citas.length === 0) {
     return (
       <p className="mensaje mensaje-aviso">
-        Este paciente no tiene citas confirmadas pendientes de atención
-        contigo.
+        Este paciente no tiene citas confirmadas pendientes de
+        atención contigo.
       </p>
     );
   }
@@ -98,7 +110,9 @@ function FormularioAtencion({
       <h2>Registrar atención</h2>
 
       <fieldset disabled={guardando}>
-        <legend className="solo-lectores">Datos de la atención</legend>
+        <legend className="solo-lectores">
+          Datos de la atención
+        </legend>
 
         <div className="campo">
           <label htmlFor="cita-atencion">Cita confirmada *</label>
@@ -127,9 +141,7 @@ function FormularioAtencion({
           <select
             id="tratamiento-atencion"
             value={tratamientoId}
-            onChange={(evento) =>
-              setTratamientoId(evento.target.value)
-            }
+            onChange={(evento) => setTratamientoId(evento.target.value)}
             required
           >
             <option value="">Selecciona un tratamiento</option>
@@ -162,9 +174,7 @@ function FormularioAtencion({
             rows={4}
             maxLength={5000}
             value={indicaciones}
-            onChange={(evento) =>
-              setIndicaciones(evento.target.value)
-            }
+            onChange={(evento) => setIndicaciones(evento.target.value)}
             required
           />
         </div>
@@ -204,13 +214,17 @@ function FormularioAtencion({
 
 export default function Historial({
   sesion,
-  onSesionExpirada
+  onSesionExpirada,
+  pacienteIdInicial = null
 }) {
   const [buscar, setBuscar] = useState("");
   const [filtro, setFiltro] = useState("");
   const [pagina, setPagina] = useState(1);
   const [revision, setRevision] = useState(0);
-  const [pacienteId, setPacienteId] = useState(null);
+
+  const [pacienteId, setPacienteId] = useState(() =>
+    identificadorValido(pacienteIdInicial)
+  );
 
   const [listado, setListado] = useState({
     pacientes: [],
@@ -219,7 +233,7 @@ export default function Historial({
 
   const [detalle, setDetalle] = useState(null);
   const [tratamientos, setTratamientos] = useState([]);
-  const [cargandoLista, setCargandoLista] = useState(false);
+  const [cargandoLista, setCargandoLista] = useState(true);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [errorLista, setErrorLista] = useState("");
   const [errorDetalle, setErrorDetalle] = useState("");
@@ -228,9 +242,13 @@ export default function Historial({
   const esDoctor = sesion.usuario.rol === "doctor";
 
   useEffect(() => {
+    if (pacienteId !== null) {
+      return undefined;
+    }
+
     let vigente = true;
 
-    async function cargar() {
+    async function cargarLista() {
       setCargandoLista(true);
       setErrorLista("");
 
@@ -249,12 +267,14 @@ export default function Historial({
           setListado(datos);
         }
       } catch (error) {
-        if (vigente) {
-          if (error.status === 401) {
-            onSesionExpirada();
-          } else {
-            setErrorLista(error.message);
-          }
+        if (!vigente) {
+          return;
+        }
+
+        if (error.status === 401) {
+          onSesionExpirada();
+        } else {
+          setErrorLista(error.message);
         }
       } finally {
         if (vigente) {
@@ -263,12 +283,13 @@ export default function Historial({
       }
     }
 
-    cargar();
+    void cargarLista();
 
     return () => {
       vigente = false;
     };
   }, [
+    pacienteId,
     filtro,
     pagina,
     revision,
@@ -277,25 +298,28 @@ export default function Historial({
   ]);
 
   useEffect(() => {
-    if (!pacienteId) {
+    if (pacienteId === null) {
       return undefined;
     }
 
     let vigente = true;
 
-    async function cargar() {
+    async function cargarDetalle() {
       setCargandoDetalle(true);
       setErrorDetalle("");
       setDetalle(null);
+      setTratamientos([]);
 
       try {
         const [expediente, catalogo] = await Promise.all([
           consultarApi(`/api/historial/pacientes/${pacienteId}`, {
             token: sesion.token
           }),
-          consultarApi("/api/historial/tratamientos", {
-            token: sesion.token
-          })
+          esDoctor
+            ? consultarApi("/api/historial/tratamientos", {
+                token: sesion.token
+              })
+            : Promise.resolve({ tratamientos: [] })
         ]);
 
         if (vigente) {
@@ -303,12 +327,14 @@ export default function Historial({
           setTratamientos(catalogo.tratamientos);
         }
       } catch (error) {
-        if (vigente) {
-          if (error.status === 401) {
-            onSesionExpirada();
-          } else {
-            setErrorDetalle(error.message);
-          }
+        if (!vigente) {
+          return;
+        }
+
+        if (error.status === 401) {
+          onSesionExpirada();
+        } else {
+          setErrorDetalle(error.message);
         }
       } finally {
         if (vigente) {
@@ -317,7 +343,7 @@ export default function Historial({
       }
     }
 
-    cargar();
+    void cargarDetalle();
 
     return () => {
       vigente = false;
@@ -326,6 +352,7 @@ export default function Historial({
     pacienteId,
     revision,
     sesion.token,
+    esDoctor,
     onSesionExpirada
   ]);
 
@@ -335,6 +362,36 @@ export default function Historial({
     setPagina(1);
     setRevision((actual) => actual + 1);
   }
+
+  function abrirPaciente(id) {
+    const identificador = identificadorValido(id);
+
+    if (identificador === null) {
+      return;
+    }
+
+    setDetalle(null);
+    setErrorDetalle("");
+    setAviso("");
+    setCargandoDetalle(true);
+    setPacienteId(identificador);
+  }
+
+  function volverAlListado() {
+    setDetalle(null);
+    setTratamientos([]);
+    setErrorDetalle("");
+    setAviso("");
+    setCargandoDetalle(false);
+    setCargandoLista(true);
+    setPacienteId(null);
+  }
+
+  const detalleVisible =
+    pacienteId !== null &&
+    Number(detalle?.paciente?.id) === pacienteId
+      ? detalle
+      : null;
 
   return (
     <section className="modulo-historial">
@@ -346,224 +403,266 @@ export default function Historial({
           </p>
         </div>
 
-        <button
-          type="button"
-          className="boton-secundario"
-          onClick={() => setRevision((actual) => actual + 1)}
-        >
-          Actualizar
-        </button>
+        <div className="acciones-cabecera">
+          {pacienteId !== null && (
+            <button
+              type="button"
+              className="boton-secundario"
+              onClick={volverAlListado}
+            >
+              Volver a pacientes
+            </button>
+          )}
+
+          <button
+            type="button"
+            className="boton-secundario"
+            disabled={
+              pacienteId === null ? cargandoLista : cargandoDetalle
+            }
+            onClick={() => setRevision((actual) => actual + 1)}
+          >
+            Actualizar
+          </button>
+        </div>
       </header>
 
-      <form
-        className="buscador-pacientes buscador-historial"
-        onSubmit={ejecutarBusqueda}
-      >
-        <label className="solo-lectores" htmlFor="buscar-historial">
-          Buscar paciente
-        </label>
-        <input
-          id="buscar-historial"
-          value={buscar}
-          onChange={(evento) => setBuscar(evento.target.value)}
-          maxLength={150}
-          placeholder="Buscar paciente por nombre..."
-        />
-        <button type="submit" className="boton-secundario">
-          Buscar
-        </button>
-      </form>
-
-      {errorLista && (
-        <p className="mensaje mensaje-error" role="alert">
-          {errorLista}
-        </p>
-      )}
-
-      <div className="selector-expedientes" aria-busy={cargandoLista}>
-        {cargandoLista ? (
-          <p className="descripcion">Cargando pacientes...</p>
-        ) : listado.pacientes.length === 0 ? (
-          <p className="mensaje mensaje-aviso">
-            No hay pacientes disponibles con ese criterio.
-            {esDoctor &&
-              " Deben tener una cita confirmada o completada contigo."}
-          </p>
-        ) : (
-          listado.pacientes.map((paciente) => (
-            <button
-              key={paciente.id}
-              type="button"
-              className={`selector-expediente ${
-                pacienteId === paciente.id ? "seleccionado" : ""
-              }`}
-              aria-pressed={pacienteId === paciente.id}
-              onClick={() => {
-                setPacienteId(paciente.id);
-                setAviso("");
-              }}
-            >
-              <strong>{paciente.nombre}</strong>
-              <span>
-                ID {paciente.id} · {paciente.telefono || "Sin teléfono"}
-              </span>
-            </button>
-          ))
-        )}
-      </div>
-
-      <div className="paginacion-historial">
-        <button
-          type="button"
-          className="boton-secundario"
-          disabled={cargandoLista || pagina === 1}
-          onClick={() => setPagina((actual) => actual - 1)}
-        >
-          Anterior
-        </button>
-        <span>
-          Página {pagina} de {listado.total_paginas}
-        </span>
-        <button
-          type="button"
-          className="boton-secundario"
-          disabled={
-            cargandoLista || pagina >= listado.total_paginas
-          }
-          onClick={() => setPagina((actual) => actual + 1)}
-        >
-          Siguiente
-        </button>
-      </div>
-
-      {aviso && (
-        <p className="mensaje mensaje-aviso" role="status">
-          {aviso}
-        </p>
-      )}
-
-      {errorDetalle && (
-        <p className="mensaje mensaje-error" role="alert">
-          {errorDetalle}
-        </p>
-      )}
-
-      {cargandoDetalle && (
-        <p className="descripcion" role="status">
-          Cargando expediente...
-        </p>
-      )}
-
-      {!pacienteId && (
-        <p className="mensaje mensaje-aviso">
-          Selecciona un paciente para abrir su expediente.
-        </p>
-      )}
-
-      {detalle && !cargandoDetalle && (
+      {pacienteId === null && (
         <>
-          <section className="tarjeta ficha-expediente">
-            <div className="cabecera-expediente">
-              <div>
-                <h2>{detalle.paciente.nombre}</h2>
-                <p className="descripcion">
-                  ID del paciente: {detalle.paciente.id}
-                </p>
-              </div>
-              <span className={`estado ${detalle.paciente.estado}`}>
-                {detalle.paciente.estado}
-              </span>
-            </div>
+          <form
+            className="buscador-pacientes buscador-historial"
+            onSubmit={ejecutarBusqueda}
+          >
+            <label className="solo-lectores" htmlFor="buscar-historial">
+              Buscar paciente
+            </label>
+            <input
+              id="buscar-historial"
+              value={buscar}
+              onChange={(evento) => setBuscar(evento.target.value)}
+              maxLength={150}
+              placeholder="Buscar paciente por nombre..."
+            />
+            <button type="submit" className="boton-secundario">
+              Buscar
+            </button>
+          </form>
 
-            <dl className="datos-cuenta">
-              <div>
-                <dt>Fecha de nacimiento</dt>
-                <dd>
-                  {fechaNacimiento(detalle.paciente.fecha_nacimiento)}
-                </dd>
-              </div>
-              <div>
-                <dt>Teléfono</dt>
-                <dd>{detalle.paciente.telefono || "Sin registrar"}</dd>
-              </div>
-              <div>
-                <dt>Correo electrónico</dt>
-                <dd>{detalle.paciente.email || "Sin registrar"}</dd>
-              </div>
-            </dl>
-
-            <div className="antecedentes-expediente">
-              <h3>Antecedentes registrados</h3>
-              <p>
-                {detalle.paciente.antecedentes ||
-                  "No se han registrado antecedentes."}
-              </p>
-
-              {detalle.paciente.alergias && (
-                <>
-                  <h3>Alergias</h3>
-                  <p>{detalle.paciente.alergias}</p>
-                </>
-              )}
-            </div>
-          </section>
-
-          <h2 className="titulo-seccion-historial">Atenciones anteriores</h2>
-
-          {detalle.historial.length === 0 ? (
-            <p className="mensaje mensaje-aviso">
-              Este paciente todavía no tiene atenciones registradas.
+          {errorLista && (
+            <p className="mensaje mensaje-error" role="alert">
+              {errorLista}
             </p>
-          ) : (
-            <div className="lista-atenciones">
-              {detalle.historial.map((registro) => (
-                <article
-                  className="tarjeta registro-atencion"
-                  key={registro.id}
+          )}
+
+          {!errorLista && (
+            <>
+              <div
+                className="selector-expedientes"
+                aria-busy={cargandoLista}
+              >
+                {cargandoLista ? (
+                  <p className="descripcion">Cargando pacientes...</p>
+                ) : listado.pacientes.length === 0 ? (
+                  <p className="mensaje mensaje-aviso">
+                    No hay pacientes disponibles con ese criterio.
+                    {esDoctor &&
+                      " Deben tener una cita confirmada o completada contigo."}
+                  </p>
+                ) : (
+                  listado.pacientes.map((paciente) => (
+                    <button
+                      key={paciente.id}
+                      type="button"
+                      className="selector-expediente"
+                      onClick={() => abrirPaciente(paciente.id)}
+                    >
+                      <strong>{paciente.nombre}</strong>
+                      <span>
+                        ID {paciente.id} ·{" "}
+                        {paciente.telefono || "Sin teléfono"}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              <div className="paginacion-historial">
+                <button
+                  type="button"
+                  className="boton-secundario"
+                  disabled={cargandoLista || pagina === 1}
+                  onClick={() => setPagina((actual) => actual - 1)}
                 >
-                  <header>
-                    <div>
-                      <strong>
-                        {registro.tratamiento || "Atención médica"}
-                      </strong>
-                      <p className="descripcion">
-                        Registro: {fechaHora(registro.fecha)}
-                      </p>
-                    </div>
-                    <span className="descripcion">
-                      {registro.doctor}
-                    </span>
-                  </header>
+                  Anterior
+                </button>
 
-                  <h3>Diagnóstico</h3>
-                  <p>{registro.diagnostico}</p>
+                <span>
+                  Página {pagina} de {listado.total_paginas}
+                </span>
 
-                  <h3>Indicaciones y seguimiento</h3>
-                  <p>{registro.indicaciones || "Sin indicaciones registradas."}</p>
+                <button
+                  type="button"
+                  className="boton-secundario"
+                  disabled={
+                    cargandoLista || pagina >= listado.total_paginas
+                  }
+                  onClick={() => setPagina((actual) => actual + 1)}
+                >
+                  Siguiente
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      )}
 
-                  {registro.notas && (
-                    <>
-                      <h3>Notas</h3>
-                      <p>{registro.notas}</p>
-                    </>
-                  )}
-                </article>
-              ))}
+      {pacienteId !== null && (
+        <>
+          {aviso && (
+            <p className="mensaje mensaje-aviso" role="status">
+              {aviso}
+            </p>
+          )}
+
+          {errorDetalle && (
+            <div className="mensaje mensaje-error" role="alert">
+              <p>{errorDetalle}</p>
+              <button
+                type="button"
+                className="boton-secundario"
+                onClick={() => setRevision((actual) => actual + 1)}
+              >
+                Reintentar
+              </button>
             </div>
           )}
 
-          {esDoctor && (
-            <FormularioAtencion
-              key={`${detalle.paciente.id}-${revision}`}
-              citas={detalle.citas}
-              tratamientos={tratamientos}
-              token={sesion.token}
-              onSesionExpirada={onSesionExpirada}
-              onGuardado={(mensaje) => {
-                setAviso(mensaje);
-                setRevision((actual) => actual + 1);
-              }}
-            />
+          {cargandoDetalle && (
+            <p className="descripcion" role="status">
+              Cargando expediente...
+            </p>
+          )}
+
+          {detalleVisible && !cargandoDetalle && (
+            <>
+              <section className="tarjeta ficha-expediente">
+                <div className="cabecera-expediente">
+                  <div>
+                    <h2>{detalleVisible.paciente.nombre}</h2>
+                    <p className="descripcion">
+                      ID del paciente: {detalleVisible.paciente.id}
+                    </p>
+                  </div>
+
+                  <span
+                    className={`estado ${detalleVisible.paciente.estado}`}
+                  >
+                    {detalleVisible.paciente.estado}
+                  </span>
+                </div>
+
+                <dl className="datos-cuenta">
+                  <div>
+                    <dt>Fecha de nacimiento</dt>
+                    <dd>
+                      {fechaNacimiento(
+                        detalleVisible.paciente.fecha_nacimiento
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Teléfono</dt>
+                    <dd>
+                      {detalleVisible.paciente.telefono || "Sin registrar"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Correo electrónico</dt>
+                    <dd>
+                      {detalleVisible.paciente.email || "Sin registrar"}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="antecedentes-expediente">
+                  <h3>Antecedentes registrados</h3>
+                  <p>
+                    {detalleVisible.paciente.antecedentes ||
+                      "No se han registrado antecedentes."}
+                  </p>
+
+                  {detalleVisible.paciente.alergias && (
+                    <>
+                      <h3>Alergias</h3>
+                      <p>{detalleVisible.paciente.alergias}</p>
+                    </>
+                  )}
+                </div>
+              </section>
+
+              <h2 className="titulo-seccion-historial">
+                Atenciones anteriores
+              </h2>
+
+              {detalleVisible.historial.length === 0 ? (
+                <p className="mensaje mensaje-aviso">
+                  Este paciente todavía no tiene atenciones registradas.
+                </p>
+              ) : (
+                <div className="lista-atenciones">
+                  {detalleVisible.historial.map((registro) => (
+                    <article
+                      className="tarjeta registro-atencion"
+                      key={registro.id}
+                    >
+                      <header>
+                        <div>
+                          <strong>
+                            {registro.tratamiento || "Atención médica"}
+                          </strong>
+                          <p className="descripcion">
+                            Registro: {fechaHora(registro.fecha)}
+                          </p>
+                        </div>
+                        <span className="descripcion">
+                          {registro.doctor}
+                        </span>
+                      </header>
+
+                      <h3>Diagnóstico</h3>
+                      <p>{registro.diagnostico}</p>
+
+                      <h3>Indicaciones y seguimiento</h3>
+                      <p>
+                        {registro.indicaciones ||
+                          "Sin indicaciones registradas."}
+                      </p>
+
+                      {registro.notas && (
+                        <>
+                          <h3>Notas</h3>
+                          <p>{registro.notas}</p>
+                        </>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+
+              {esDoctor && (
+                <FormularioAtencion
+                  key={`${detalleVisible.paciente.id}-${revision}`}
+                  citas={detalleVisible.citas}
+                  tratamientos={tratamientos}
+                  token={sesion.token}
+                  onSesionExpirada={onSesionExpirada}
+                  onGuardado={(mensaje) => {
+                    setAviso(mensaje);
+                    setRevision((actual) => actual + 1);
+                  }}
+                />
+              )}
+            </>
           )}
         </>
       )}

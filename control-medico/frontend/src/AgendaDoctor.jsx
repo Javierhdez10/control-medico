@@ -58,9 +58,7 @@ function esFechaValida(valor) {
 
 function moverFecha(fecha, cantidad) {
   const resultado = new Date(`${fecha}T12:00:00Z`);
-
   resultado.setUTCDate(resultado.getUTCDate() + cantidad);
-
   return resultado.toISOString().slice(0, 10);
 }
 
@@ -166,6 +164,19 @@ export default function AgendaDoctor({
     }
   }
 
+  function abrirExpediente(cita) {
+    const pacienteId = Number(cita.paciente_id);
+
+    if (!Number.isInteger(pacienteId) || pacienteId < 1) {
+      setError(
+        "La cita no contiene el identificador del paciente. Actualiza el backend y vuelve a consultar la agenda."
+      );
+      return;
+    }
+
+    onAbrirHistorial(pacienteId);
+  }
+
   return (
     <section
       className="agenda-doctor"
@@ -175,7 +186,6 @@ export default function AgendaDoctor({
       <header className="ad-cabecera">
         <div>
           <h1 id="titulo-agenda-doctor">Mi agenda</h1>
-
           <p>
             Consulta tus citas y continúa con la atención
             de tus pacientes.
@@ -199,7 +209,6 @@ export default function AgendaDoctor({
           <label htmlFor="fecha-agenda-doctor">
             Fecha de consulta
           </label>
-
           <input
             id="fecha-agenda-doctor"
             type="date"
@@ -251,7 +260,6 @@ export default function AgendaDoctor({
       {fechaCorrecta && error && (
         <div className="ad-error" role="alert">
           <p>{error}</p>
-
           <button
             type="button"
             className="ad-boton"
@@ -274,7 +282,6 @@ export default function AgendaDoctor({
               <strong>{datosVisibles.doctor.nombre}</strong>
               <span>{datosVisibles.doctor.especialidad}</span>
             </div>
-
             <p>
               {formatoFecha.format(
                 new Date(`${datosVisibles.fecha}T12:00:00Z`)
@@ -299,7 +306,6 @@ export default function AgendaDoctor({
           <div className="ad-listado">
             <div className="ad-listado-cabecera">
               <h2>Citas del día</h2>
-
               <p>
                 Mostrando {datosVisibles.citas.length} de{" "}
                 {datosVisibles.total} citas.
@@ -322,23 +328,15 @@ export default function AgendaDoctor({
                       <th scope="col">Atención</th>
                     </tr>
                   </thead>
-
                   <tbody>
                     {datosVisibles.citas.map((cita) => (
                       <tr key={cita.id}>
                         <td className="ad-horario">
                           {hora(cita.fecha_hora)}
-                          <span>
-                            a {hora(cita.fecha_hora_fin)}
-                          </span>
+                          <span>a {hora(cita.fecha_hora_fin)}</span>
                         </td>
-
                         <td>{cita.paciente}</td>
-
-                        <td className="ad-motivo">
-                          {cita.motivo}
-                        </td>
-
+                        <td className="ad-motivo">{cita.motivo}</td>
                         <td>
                           <span
                             className={`ad-estado ad-estado-${cita.estado}`}
@@ -346,14 +344,13 @@ export default function AgendaDoctor({
                             {nombresEstados[cita.estado]}
                           </span>
                         </td>
-
                         <td>
                           {cita.puede_atender ||
                           cita.estado === "completada" ? (
                             <button
                               type="button"
                               className="ad-boton"
-                              onClick={onAbrirHistorial}
+                              onClick={() => abrirExpediente(cita)}
                             >
                               Ir al historial
                             </button>
@@ -372,11 +369,9 @@ export default function AgendaDoctor({
 
             <div className="ad-pie">
               <p>
-                Al pulsar “Ir al historial”, se abrirá el
-                módulo de historial. Busca allí al paciente
-                para consultar o registrar su atención.
+                “Ir al historial” abre directamente el expediente
+                del paciente seleccionado.
               </p>
-
               <p>
                 Actualizado a las{" "}
                 {hora(datosVisibles.actualizado_en)}.

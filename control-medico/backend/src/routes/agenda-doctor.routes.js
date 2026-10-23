@@ -87,6 +87,7 @@ router.get("/", async (req, res, next) => {
         WITH citas_del_dia AS (
           SELECT
             c.id,
+            c.paciente_id,
             p.nombre AS paciente,
             c.fecha_hora,
             c.fecha_hora_fin,
