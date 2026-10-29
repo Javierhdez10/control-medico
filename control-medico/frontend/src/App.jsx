@@ -1,3 +1,4 @@
+import Password from "./Password.jsx";
 import { useCallback, useEffect, useState } from "react";
 import { consultarApi } from "./api.js";
 import Panel from "./Panel.jsx";
@@ -13,6 +14,7 @@ function leerCorreoGuardado() {
 }
 
 export default function App() {
+  const [recuperacion,setRecuperacion]=useState(false);
   const [email, setEmail] = useState(leerCorreoGuardado);
   const [recordarCorreo, setRecordarCorreo] = useState(
     () => Boolean(leerCorreoGuardado())
@@ -130,13 +132,15 @@ export default function App() {
     return (
       <Panel
         sesion={sesion}
-        onCerrarSesion={() =>
-          terminarSesion("Has cerrado sesión.")
+        onCerrarSesion={(mensaje) =>
+          terminarSesion(typeof mensaje === "string" ? mensaje : "Has cerrado sesión.")
         }
         onSesionExpirada={sesionExpirada}
       />
     );
   }
+
+  if(recuperacion) return <main className="pantalla-acceso"><div className="contenedor-acceso"><div className="marca marca-acceso">Clínica médica</div><Password recuperacion onCancelar={()=>setRecuperacion(false)} onFinalizar={mensaje=>{setRecuperacion(false);setAviso(mensaje);setError("");}} /></div></main>;
 
   return (
     <main className="pantalla-acceso">
@@ -241,6 +245,7 @@ export default function App() {
               {cargando ? "Ingresando..." : "Iniciar sesión"}
             </button>
           </form>
+          <button type="button" className="boton-secundario" disabled={cargando} onClick={()=>setRecuperacion(true)}>Olvidé mi contraseña</button>
         </section>
       </div>
     </main>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { consultarApi } from "./api.js";
 import "./historial.css";
+import useConfirmacion from "./useConfirmacion.jsx";
 
 function fechaHora(valor) {
   return new Intl.DateTimeFormat("es-SV", {
@@ -38,6 +39,7 @@ function FormularioAtencion({
   onGuardado,
   onSesionExpirada
 }) {
+  const [solicitar, dialogo] = useConfirmacion();
   const [citaId, setCitaId] = useState("");
   const [tratamientoId, setTratamientoId] = useState("");
   const [diagnostico, setDiagnostico] = useState("");
@@ -54,9 +56,7 @@ function FormularioAtencion({
     }
 
     if (
-      !window.confirm(
-        "¿Guardar esta atención y marcar la cita como completada?"
-      )
+      !await solicitar({ titulo: "Completar consulta", descripcion: "¿Guardar esta atención y marcar la cita como completada?", boton: "Guardar atención" })
     ) {
       return;
     }
@@ -102,6 +102,7 @@ function FormularioAtencion({
   }
 
   return (
+    <>{dialogo}
     <form
       className="tarjeta formulario-paciente formulario-atencion"
       onSubmit={guardar}
@@ -209,6 +210,7 @@ function FormularioAtencion({
         </div>
       </fieldset>
     </form>
+    </>
   );
 }
 

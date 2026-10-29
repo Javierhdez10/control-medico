@@ -2,224 +2,57 @@ import { Router } from "express";
 import { pool } from "../config/db.js";
 import { requerirAutenticacion } from "./auth.routes.js";
 
+import { fallo, leerId, leerFecha, leerDuracion, leerHora, leerInstanteOriginal, comprobarEstadoReprogramable, comprobarDoctor, comprobarPaciente, obtenerDisponibilidad, bloquearAgenda } from "../services/agenda.js";
+
+import { auditar } from "../services/operaciones.js";
+
 const router = Router();
 const zona = "America/El_Salvador";
-const duraciones = [15, 30, 45, 60];
+
 
 router.use(requerirAutenticacion);
 
-router.use((req, res, next) => {
+router.use(async (req, res, next) => {
   res.setHeader("Cache-Control", "no-store");
 
-  if (!["admin", "recepcionista"].includes(req.usuario.rol)) {
+  if (!["admin", "recepcionista", "paciente"].includes(req.usuario.rol)) {
     return res.status(403).json({
       correcto: false,
       mensaje: "Tu cuenta no tiene permiso para gestionar la agenda."
     });
   }
 
+  if (req.usuario.rol === "paciente") {
+    try {
+      const ficha = await pool.query("SELECT id FROM public.pacientes WHERE usuario_id = $1 AND estado <> 'inactivo'", [req.usuario.id]);
+      if (!ficha.rowCount) return res.status(403).json({ correcto: false, mensaje: "Tu cuenta no tiene una ficha activa vinculada. Contacta a recepción." });
+      req.pacienteId = ficha.rows[0].id;
+    } catch (error) { return next(error); }
+  }
   next();
 });
 
-function fallo(mensaje, status = 400) {
-  const error = new Error(mensaje);
-  error.status = status;
-  return error;
-}
-
-function leerId(valor, nombre) {
-  if (!["string", "number"].includes(typeof valor)) {
-    throw fallo(`${nombre} no es válido.`);
-  }
-
-  const texto = String(valor);
-
-  if (!/^[1-9]\d*$/.test(texto)) {
-    throw fallo(`${nombre} no es válido.`);
-  }
-
-  const numero = Number(texto);
-
-  if (!Number.isSafeInteger(numero) || numero > 2147483647) {
-    throw fallo(`${nombre} no es válido.`);
-  }
-
-  return numero;
-}
-
-function leerFecha(valor) {
-  if (
-    typeof valor !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(valor)
-  ) {
-    throw fallo("La fecha debe tener el formato AAAA-MM-DD.");
-  }
-
-  const fecha = new Date(`${valor}T00:00:00.000Z`);
-
-  if (
-    Number.isNaN(fecha.getTime()) ||
-    fecha.toISOString().slice(0, 10) !== valor ||
-    valor < "1900-01-01" ||
-    valor > "2100-12-31"
-  ) {
-    throw fallo("Selecciona una fecha válida.");
-  }
-
-  return valor;
-}
-
-function leerDuracion(valor) {
-  if (!["number", "string"].includes(typeof valor)) {
-    throw fallo("Selecciona una duración válida.");
-  }
-
-  const duracion = Number(valor);
-
-  if (!duraciones.includes(duracion)) {
-    throw fallo("La duración debe ser de 15, 30, 45 o 60 minutos.");
-  }
-
-  return duracion;
-}
-
-function leerHora(valor) {
-  if (
-    typeof valor !== "string" ||
-    !/^([01]\d|2[0-3]):[0-5]\d$/.test(valor)
-  ) {
-    throw fallo("Selecciona una hora válida.");
-  }
-
-  return valor;
-}
-
-function leerInstanteOriginal(valor) {
-  if (
-    typeof valor !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(valor)
-  ) {
-    throw fallo("Faltan los datos originales. Abre nuevamente la cita.");
-  }
-
-  const instante = new Date(valor).getTime();
-
-  if (!Number.isFinite(instante)) {
-    throw fallo("Los datos originales de la cita no son válidos.");
-  }
-
-  return instante;
-}
-
-function comprobarEstadoReprogramable(cita) {
-  if (!["pendiente", "confirmada"].includes(cita.estado)) {
-    throw fallo(
-      "Solo puedes reprogramar citas pendientes o confirmadas.",
-      409
+router.get("/mis-citas", async (req, res, next) => {
+  try {
+    if (!req.pacienteId) throw fallo("Esta consulta es exclusiva para pacientes.", 403);
+    const pagina = leerId(req.query.pagina ?? "1", "La página");
+    if (pagina > 1000000) throw fallo("La página no es válida.");
+    const grupo = req.query.grupo ?? "todas";
+    if (!["proximas","anteriores","todas"].includes(grupo)) throw fallo("Filtro de citas inválido.");
+    const condicion = grupo === "proximas" ? "AND c.estado IN ('pendiente','confirmada') AND c.fecha_hora_fin > clock_timestamp()" : grupo === "anteriores" ? "AND (c.estado IN ('completada','cancelada') OR c.fecha_hora_fin <= clock_timestamp())" : "";
+    const orden = grupo === "proximas" ? "ASC" : "DESC";
+    const resultado = await pool.query(
+      `SELECT c.id, c.doctor_id, u.nombre AS doctor, c.fecha_hora, c.fecha_hora_fin,
+       c.motivo, c.estado, c.motivo_cancelacion, c.importe_total, c.importe_pendiente,
+       (EXTRACT(EPOCH FROM (c.fecha_hora_fin - c.fecha_hora))/60)::integer AS duracion
+       FROM public.citas c JOIN public.doctores d ON d.id = c.doctor_id
+       JOIN public.usuarios u ON u.id = d.usuario_id WHERE c.paciente_id = $1 ${condicion}
+       ORDER BY c.fecha_hora ${orden}, c.id ${orden} LIMIT 20 OFFSET $2`, [req.pacienteId, (pagina - 1) * 20]
     );
-  }
-}
-
-async function comprobarDoctor(doctorId, conexion = pool) {
-  const resultado = await conexion.query(
-    `
-      SELECT d.id
-      FROM public.doctores d
-      JOIN public.usuarios u ON u.id = d.usuario_id
-      WHERE d.id = $1
-        AND d.activo = true
-        AND u.activo = true
-        AND u.rol = 'doctor'
-    `,
-    [doctorId]
-  );
-
-  if (resultado.rowCount === 0) {
-    throw fallo("El doctor no existe o no está activo.", 404);
-  }
-}
-
-async function comprobarPaciente(pacienteId, conexion = pool) {
-  const resultado = await conexion.query(
-    `
-      SELECT id
-      FROM public.pacientes
-      WHERE id = $1
-        AND estado <> 'inactivo'
-    `,
-    [pacienteId]
-  );
-
-  if (resultado.rowCount === 0) {
-    throw fallo("El paciente no existe o está inactivo.", 404);
-  }
-}
-
-async function obtenerDisponibilidad(
-  doctorId,
-  fecha,
-  duracion,
-  pacienteId = null,
-  citaExcluidaId = null,
-  conexion = pool
-) {
-  const resultado = await conexion.query(
-    `
-      WITH horarios AS (
-        SELECT
-          ($2::date + h.hora_inicio) AT TIME ZONE $5 AS inicio,
-          ($2::date + h.hora_fin) AT TIME ZONE $5 AS fin
-        FROM public.horarios_doctores h
-        WHERE h.doctor_id = $1
-          AND h.dia_semana =
-              EXTRACT(ISODOW FROM $2::date)::integer
-      ),
-      bloques AS (
-        SELECT DISTINCT
-          s.inicio,
-          s.inicio + ($3::integer * INTERVAL '1 minute') AS fin
-        FROM horarios h
-        CROSS JOIN LATERAL generate_series(
-          h.inicio,
-          h.fin - ($3::integer * INTERVAL '1 minute'),
-          INTERVAL '15 minutes'
-        ) AS s(inicio)
-      )
-      SELECT
-        b.inicio,
-        b.fin,
-        to_char(b.inicio AT TIME ZONE $5, 'HH24:MI') AS hora
-      FROM bloques b
-      WHERE b.inicio > clock_timestamp()
-        AND NOT EXISTS (
-          SELECT 1
-          FROM public.citas c
-          WHERE c.estado <> 'cancelada'
-            AND ($6::integer IS NULL OR c.id <> $6::integer)
-            AND (
-              c.doctor_id = $1
-              OR (
-                $4::integer IS NOT NULL
-                AND c.paciente_id = $4::integer
-              )
-            )
-            AND c.fecha_hora < b.fin
-            AND c.fecha_hora_fin > b.inicio
-        )
-      ORDER BY b.inicio
-    `,
-    [
-      doctorId,
-      fecha,
-      duracion,
-      pacienteId,
-      zona,
-      citaExcluidaId
-    ]
-  );
-
-  return resultado.rows;
-}
+    const total = await pool.query(`SELECT count(*)::integer AS total FROM public.citas c WHERE paciente_id = $1 ${condicion}`, [req.pacienteId]);
+    res.json({ correcto: true, citas: resultado.rows, total_paginas: Math.max(1, Math.ceil(total.rows[0].total / 20)) });
+  } catch (error) { next(error); }
+});
 
 router.get("/doctores", async (req, res, next) => {
   try {
@@ -248,9 +81,9 @@ router.get("/disponibilidad", async (req, res, next) => {
     const fecha = leerFecha(req.query.fecha);
     const duracion = leerDuracion(req.query.duracion ?? 30);
 
-    const pacienteId = req.query.paciente_id
+    const pacienteId = req.pacienteId ?? (req.query.paciente_id
       ? leerId(req.query.paciente_id, "El paciente")
-      : null;
+      : null);
 
     await comprobarDoctor(doctorId);
 
@@ -278,6 +111,7 @@ router.get("/disponibilidad", async (req, res, next) => {
 
 router.get("/citas", async (req, res, next) => {
   try {
+    if (req.pacienteId) throw fallo("Utiliza la consulta de tus propias citas.", 403);
     const doctorId = leerId(req.query.doctor_id, "El doctor");
     const fecha = leerFecha(req.query.fecha);
 
@@ -300,7 +134,8 @@ router.get("/citas", async (req, res, next) => {
           c.motivo,
           c.estado,
           c.motivo_cancelacion,
-          c.importe_total
+          c.importe_total,
+          c.importe_pendiente
         FROM public.citas c
         JOIN public.pacientes p ON p.id = c.paciente_id
         WHERE c.doctor_id = $1
@@ -323,10 +158,11 @@ router.get("/citas", async (req, res, next) => {
 });
 
 router.post("/citas", async (req, res, next) => {
+  let cliente;
   try {
     const cuerpo = req.body ?? {};
     const doctorId = leerId(cuerpo.doctor_id, "El doctor");
-    const pacienteId = leerId(cuerpo.paciente_id, "El paciente");
+    const pacienteId = req.pacienteId ?? leerId(cuerpo.paciente_id, "El paciente");
     const fecha = leerFecha(cuerpo.fecha);
     const duracion = leerDuracion(cuerpo.duracion);
     const hora = leerHora(cuerpo.hora);
@@ -339,7 +175,7 @@ router.post("/citas", async (req, res, next) => {
       throw fallo("El motivo debe tener entre 1 y 2000 caracteres.");
     }
 
-    const importeTexto = String(cuerpo.importe_total ?? "0");
+    const importeTexto = req.pacienteId ? "0" : String(cuerpo.importe_total ?? "0");
 
     if (!/^\d{1,8}(\.\d{1,2})?$/.test(importeTexto)) {
       throw fallo(
@@ -347,14 +183,17 @@ router.post("/citas", async (req, res, next) => {
       );
     }
 
-    await comprobarDoctor(doctorId);
-    await comprobarPaciente(pacienteId);
+    cliente = await pool.connect();
+    await cliente.query("BEGIN");
+    await bloquearAgenda(cliente, doctorId, pacienteId);
+    await comprobarDoctor(doctorId, cliente);
+    await comprobarPaciente(pacienteId, cliente);
 
     const horarios = await obtenerDisponibilidad(
       doctorId,
       fecha,
       duracion,
-      pacienteId
+      pacienteId, null, cliente
     );
 
     const elegido = horarios.find((item) => item.hora === hora);
@@ -366,7 +205,7 @@ router.post("/citas", async (req, res, next) => {
       );
     }
 
-    const resultado = await pool.query(
+    const resultado = await cliente.query(
       `
         INSERT INTO public.citas (
           paciente_id,
@@ -375,10 +214,11 @@ router.post("/citas", async (req, res, next) => {
           fecha_hora_fin,
           motivo,
           estado,
-          importe_total
+          importe_total,
+          importe_pendiente
         )
         SELECT $1, $2, $3::timestamptz, $4::timestamptz,
-               $5, 'pendiente', $6::numeric
+               $5, 'pendiente', $6::numeric, $7
         WHERE $3::timestamptz > clock_timestamp()
         RETURNING id, fecha_hora, fecha_hora_fin, estado
       `,
@@ -388,7 +228,8 @@ router.post("/citas", async (req, res, next) => {
         elegido.inicio,
         elegido.fin,
         cuerpo.motivo.trim(),
-        importeTexto
+        importeTexto,
+        Boolean(req.pacienteId)
       ]
     );
 
@@ -399,13 +240,18 @@ router.post("/citas", async (req, res, next) => {
       );
     }
 
+    await auditar(cliente,req.usuario.id,"crear_cita","cita",resultado.rows[0].id);
+    await cliente.query("COMMIT");
     res.status(201).json({
       correcto: true,
       mensaje: "Cita registrada correctamente.",
       cita: resultado.rows[0]
     });
   } catch (error) {
+    if (cliente) await cliente.query("ROLLBACK").catch(() => {});
     next(error);
+  } finally {
+    if (cliente) cliente.release();
   }
 });
 
@@ -429,6 +275,8 @@ router.get("/citas/:id/disponibilidad", async (req, res, next) => {
     }
 
     const cita = resultado.rows[0];
+
+    if (req.pacienteId && cita.paciente_id !== req.pacienteId) throw fallo("La cita no existe.", 404);
 
     comprobarEstadoReprogramable(cita);
     await comprobarDoctor(cita.doctor_id);
@@ -480,6 +328,11 @@ router.patch("/citas/:id/reprogramar", async (req, res, next) => {
     await cliente.query("BEGIN");
     await cliente.query("SET LOCAL lock_timeout = '3s'");
     await cliente.query("SET LOCAL statement_timeout = '4s'");
+
+    const referencia = await cliente.query("SELECT doctor_id, paciente_id FROM public.citas WHERE id = $1", [id]);
+    if (!referencia.rowCount) throw fallo("La cita no existe.", 404);
+    if (req.pacienteId && referencia.rows[0].paciente_id !== req.pacienteId) throw fallo("La cita no existe.", 404);
+    await bloquearAgenda(cliente, referencia.rows[0].doctor_id, referencia.rows[0].paciente_id);
 
     const resultado = await cliente.query(
       `
@@ -557,6 +410,7 @@ router.patch("/citas/:id/reprogramar", async (req, res, next) => {
       );
     }
 
+    await auditar(cliente,req.usuario.id,"reprogramar_cita","cita",id);
     await cliente.query("COMMIT");
 
     res.json({
@@ -583,9 +437,15 @@ router.patch("/citas/:id/reprogramar", async (req, res, next) => {
 });
 
 router.patch("/citas/:id/estado", async (req, res, next) => {
+  let cliente;
   try {
     const id = leerId(req.params.id, "La cita");
     const estado = req.body?.estado;
+    if (req.pacienteId && estado !== "cancelada") throw fallo("Solo recepción puede confirmar tu cita.", 403);
+    const importe = req.body?.importe_total;
+    if (importe !== undefined && (req.pacienteId || !/^\d{1,8}(\.\d{1,2})?$/.test(String(importe)))) {
+      throw fallo("El importe debe ser positivo o cero, con máximo dos decimales.");
+    }
 
     if (!["confirmada", "cancelada"].includes(estado)) {
       throw fallo("El estado debe ser confirmada o cancelada.");
@@ -614,33 +474,42 @@ router.patch("/citas/:id/estado", async (req, res, next) => {
         ? ["pendiente"]
         : ["pendiente", "confirmada"];
 
-    const resultado = await pool.query(
+    cliente = await pool.connect();
+    await cliente.query("BEGIN");
+    const resultado = await cliente.query(
       `
         UPDATE public.citas
         SET estado = $2,
-            motivo_cancelacion = $3
+            motivo_cancelacion = $3,
+            importe_total = CASE WHEN $2 = 'confirmada' AND importe_pendiente THEN $5::numeric ELSE importe_total END,
+            importe_pendiente = CASE WHEN $2 = 'confirmada' THEN FALSE ELSE importe_pendiente END
         WHERE id = $1
           AND estado = ANY($4::text[])
+          AND ($6::integer IS NULL OR paciente_id = $6)
+          AND ($2 <> 'confirmada' OR NOT importe_pendiente OR $5::numeric IS NOT NULL)
         RETURNING id, estado
       `,
-      [id, estado, motivoCancelacion, estadosPermitidos]
+      [id, estado, motivoCancelacion, estadosPermitidos, importe ?? null, req.pacienteId ?? null]
     );
 
     if (resultado.rowCount === 0) {
       throw fallo(
-        "La cita no existe o su estado actual no permite ese cambio.",
+        "La cita no existe, cambió de estado o requiere indicar el importe para confirmarla.",
         409
       );
     }
 
+    await auditar(cliente,req.usuario.id,estado === "cancelada" ? "cancelar_cita" : "confirmar_cita","cita",id);
+    await cliente.query("COMMIT");
     res.json({
       correcto: true,
       mensaje: "Estado de la cita actualizado.",
       cita: resultado.rows[0]
     });
   } catch (error) {
+    if(cliente) await cliente.query("ROLLBACK").catch(() => {});
     next(error);
-  }
+  } finally { if(cliente) cliente.release(); }
 });
 
 router.use((error, req, res, next) => {

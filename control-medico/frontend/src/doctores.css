@@ -186,3 +186,8 @@
     flex-basis: 100%;
   }
 }
+.doc-editor-horarios { padding: 24px; }
+.doc-intervalo { display: grid; grid-template-columns: 1fr 1fr 1fr auto; align-items: end; gap: 12px; margin: 18px 0; }
+.doc-intervalo .campo { margin: 0; }
+.doc-intervalo select { width: 100%; min-height: 44px; border: 1px solid var(--borde); border-radius: 5px; padding: 10px; background: var(--blanco); color: var(--texto); font: inherit; }
+@media (max-width: 700px) { .doc-intervalo { grid-template-columns: 1fr 1fr; } }

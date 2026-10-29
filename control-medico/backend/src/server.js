@@ -10,6 +10,14 @@ import cobrosRoutes from "./routes/cobros.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import agendaDoctorRoutes from "./routes/agenda-doctor.routes.js";
 import doctoresRoutes from "./routes/doctores.routes.js";
+import reportesRoutes from "./routes/reportes.routes.js";
+
+import usuariosRoutes from "./routes/usuarios.routes.js";
+import auditoriaRoutes from "./routes/auditoria.routes.js";
+
+import recordatoriosRoutes from "./routes/recordatorios.routes.js";
+import { iniciarRecordatorios } from "./services/tarea-recordatorios.js";
+let detenerRecordatorios = async () => {};
 
 const app = express();
 
@@ -74,6 +82,9 @@ app.get("/api/salud", async (req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/usuarios", usuariosRoutes);
+app.use("/api/auditoria", auditoriaRoutes);
+app.use("/api/recordatorios", recordatoriosRoutes);
 app.use("/api/pacientes", pacientesRoutes);
 app.use("/api/agenda", agendaRoutes);
 app.use("/api/historial", historialRoutes);
@@ -81,6 +92,7 @@ app.use("/api/cobros", cobrosRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/agenda-doctor", agendaDoctorRoutes);
 app.use("/api/doctores", doctoresRoutes);
+app.use("/api/reportes", reportesRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
@@ -152,6 +164,7 @@ async function cerrarServidor(senal) {
       });
     }
 
+    await detenerRecordatorios();
     await pool.end();
 
     clearTimeout(limite);
@@ -177,6 +190,7 @@ process.on("SIGTERM", () => {
 async function iniciarServidor() {
   try {
     await pool.query("SELECT 1");
+    detenerRecordatorios = await iniciarRecordatorios();
 
     servidor = app.listen(puerto, "127.0.0.1", () => {
       console.log(
@@ -208,6 +222,7 @@ async function iniciarServidor() {
       error.code ?? "SIN_CODIGO"
     );
 
+    await detenerRecordatorios();
     await pool.end();
     process.exitCode = 1;
   }

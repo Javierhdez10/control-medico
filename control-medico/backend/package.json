@@ -4,11 +4,17 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test src/tests/*.test.js",
+    "test:integracion": "node src/scripts/verificar-integracion.js",
+    "migrar": "node src/scripts/aplicar-migraciones.js",
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "crear-admin": "node src/scripts/crear-admin.js",
-    "crear-doctor": "node src/scripts/crear-doctor.js"
+    "crear-doctor": "node src/scripts/crear-doctor.js",
+    "recordatorios": "node src/scripts/recordatorios.js",
+    "respaldo": "node src/scripts/respaldo.js",
+    "respaldo:verificar": "node src/scripts/respaldo.js --verificar",
+    "restaurar:copia": "node src/scripts/restaurar-copia.js"
   },
   "keywords": [],
   "author": "",
@@ -22,6 +28,7 @@
     "express": "^5.3.0",
     "express-rate-limit": "^8.7.1",
     "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^10.2.1",
     "pg": "^8.23.1"
   }
 }

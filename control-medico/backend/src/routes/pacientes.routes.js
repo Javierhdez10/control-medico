@@ -1,4 +1,6 @@
+import { auditar } from "../services/operaciones.js";
 import { Router } from "express";
+import bcrypt from "bcrypt";
 import { pool } from "../config/db.js";
 import { requerirAutenticacion } from "./auth.routes.js";
 
@@ -253,6 +255,7 @@ router.get("/", async (req, res, next) => {
           p.telefono,
           p.email,
           p.estado,
+          (p.usuario_id IS NOT NULL) AS tiene_cuenta,
           (
             SELECT MAX(c.fecha_hora)
             FROM public.citas c
@@ -354,6 +357,59 @@ router.post("/", async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+});
+
+router.post("/:id/cuenta", async (req, res, next) => {
+  let cliente;
+  let transaccion = false;
+  try {
+    const id = leerId(req.params.id);
+    const { email, password } = req.body ?? {};
+    if (typeof email !== "string" || email.trim().length > 254 ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
+        typeof password !== "string" || password.trim().length < 12 ||
+        Buffer.byteLength(password, "utf8") > 72) {
+      throw errorValidacion("Introduce un correo válido y una contraseña de al menos 12 caracteres y máximo 72 bytes.");
+    }
+    const hash = await bcrypt.hash(password, 12);
+    cliente = await pool.connect();
+    await cliente.query("BEGIN");
+    transaccion = true;
+    await cliente.query("SET LOCAL lock_timeout = '3s'");
+    const ficha = await cliente.query(
+      "SELECT id, nombre, telefono, usuario_id, estado FROM public.pacientes WHERE id = $1 FOR UPDATE", [id]
+    );
+    if (!ficha.rowCount) {
+      return res.status(404).json({ correcto: false, mensaje: "El paciente no existe." });
+    }
+    const paciente = ficha.rows[0];
+    if (paciente.usuario_id || paciente.estado === "inactivo") {
+      return res.status(409).json({ correcto: false, mensaje: "El paciente ya tiene una cuenta vinculada o está inactivo." });
+    }
+    const usuario = await cliente.query(
+      `INSERT INTO public.usuarios (nombre, email, password_hash, rol, telefono)
+       VALUES ($1, $2, $3, 'paciente', $4) RETURNING id`,
+      [paciente.nombre, email.trim().toLowerCase(), hash, paciente.telefono]
+    );
+    await cliente.query("UPDATE public.pacientes SET usuario_id = $1 WHERE id = $2", [usuario.rows[0].id, id]);
+    await auditar(cliente, req.usuario.id, "crear_acceso_paciente", "paciente", id);
+    await cliente.query("COMMIT");
+    transaccion = false;
+    res.status(201).json({ correcto: true, mensaje: "Cuenta creada y vinculada a la ficha del paciente." });
+  } catch (error) {
+    if (error.code === "23505") {
+      return res.status(409).json({ correcto: false, mensaje: "Ese correo ya pertenece a otra cuenta. No se modificó la ficha." });
+    }
+    if (["55P03", "40P01", "57014"].includes(error.code)) {
+      return res.status(409).json({ correcto: false, mensaje: "La ficha está siendo modificada. Actualiza y vuelve a intentarlo." });
+    }
+    next(error);
+  } finally {
+    if (cliente) {
+      try { if (transaccion) await cliente.query("ROLLBACK"); cliente.release(); }
+      catch { cliente.release(true); }
+    }
   }
 });
 

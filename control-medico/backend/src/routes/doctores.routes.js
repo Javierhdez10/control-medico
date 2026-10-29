@@ -2,6 +2,10 @@ import { Router } from "express";
 import bcrypt from "bcrypt";
 import { pool } from "../config/db.js";
 import { requerirAutenticacion } from "./auth.routes.js";
+import { bloquearAgenda } from "../services/agenda.js";
+import { validarHorarios } from "../services/horarios.js";
+
+import { auditar, transaccion } from "../services/operaciones.js";
 
 const router = Router();
 
@@ -447,6 +451,7 @@ router.post("/", async (req, res, next) => {
       );
     }
 
+    await auditar(cliente, req.usuario.id, "crear_doctor", "doctor", doctorId);
     await cliente.query("COMMIT");
 
     return res.status(201).json({
@@ -582,6 +587,7 @@ router.put("/:id", async (req, res, next) => {
       ]
     );
 
+    await auditar(cliente, req.usuario.id, "editar_doctor", "doctor", id);
     await cliente.query("COMMIT");
 
     return res.json({
@@ -612,6 +618,74 @@ router.put("/:id", async (req, res, next) => {
       cliente.release();
     }
   }
+});
+
+router.put("/:id/horarios", async (req, res, next) => {
+  let cliente;
+  try {
+    const id = leerId(req.params.id);
+    const horarios = validarHorarios(req.body?.horarios);
+    const originales = validarHorarios(req.body?.originales);
+    cliente = await pool.connect();
+    await cliente.query("BEGIN");
+    await bloquearAgenda(cliente, id);
+    const doctor = await cliente.query("SELECT id FROM public.doctores WHERE id = $1", [id]);
+    if (!doctor.rowCount) throw errorHttp("El doctor no existe.", 404);
+    const actuales = await cliente.query(
+      `SELECT dia_semana, to_char(hora_inicio, 'HH24:MI') AS hora_inicio,
+       to_char(hora_fin, 'HH24:MI') AS hora_fin FROM public.horarios_doctores
+       WHERE doctor_id = $1 ORDER BY dia_semana, hora_inicio`, [id]
+    );
+    if (JSON.stringify(actuales.rows) !== JSON.stringify(originales)) {
+      throw errorHttp("Los horarios cambiaron mientras editabas. Cierra y vuelve a abrir el formulario.", 409);
+    }
+    const conflictos = await cliente.query(
+      `SELECT c.id, to_char(c.fecha_hora AT TIME ZONE 'America/El_Salvador', 'YYYY-MM-DD HH24:MI') AS inicio,
+       to_char(c.fecha_hora_fin AT TIME ZONE 'America/El_Salvador', 'HH24:MI') AS fin
+       FROM public.citas c WHERE c.doctor_id = $1 AND c.estado IN ('pendiente', 'confirmada')
+       AND c.fecha_hora_fin > clock_timestamp() AND NOT EXISTS (
+         SELECT 1 FROM jsonb_to_recordset($2::jsonb) AS h(dia_semana integer, hora_inicio time, hora_fin time)
+         WHERE h.dia_semana = EXTRACT(ISODOW FROM c.fecha_hora AT TIME ZONE 'America/El_Salvador')
+         AND c.fecha_hora >= (((c.fecha_hora AT TIME ZONE 'America/El_Salvador')::date + h.hora_inicio) AT TIME ZONE 'America/El_Salvador')
+         AND c.fecha_hora_fin <= (((c.fecha_hora AT TIME ZONE 'America/El_Salvador')::date + h.hora_fin) AT TIME ZONE 'America/El_Salvador')
+       ) ORDER BY c.fecha_hora`, [id, JSON.stringify(horarios)]
+    );
+    if (conflictos.rowCount) {
+      throw errorHttp("No se guardó el horario. Reprograma o cancela primero estas citas: " + conflictos.rows.map(c => `#${c.id}: ${c.inicio} a ${c.fin}`).join("; "), 409);
+    }
+    // Solo se sustituyen intervalos; nunca se modifican ni eliminan citas.
+    await cliente.query("DELETE FROM public.horarios_doctores WHERE doctor_id = $1", [id]);
+    for (const h of horarios) {
+      await cliente.query("INSERT INTO public.horarios_doctores (doctor_id, dia_semana, hora_inicio, hora_fin) VALUES ($1,$2,$3,$4)", [id, h.dia_semana, h.hora_inicio, h.hora_fin]);
+    }
+    await auditar(cliente, req.usuario.id, "editar_horarios", "doctor", id);
+    await cliente.query("COMMIT");
+    res.json({ correcto: true, mensaje: "Horario semanal actualizado.", horarios });
+  } catch (error) {
+    if (cliente) await cliente.query("ROLLBACK").catch(() => {});
+    next(error);
+  } finally { if (cliente) cliente.release(); }
+});
+
+router.patch("/:id/estado", async (req,res,next) => {
+  try {
+    const id = leerId(req.params.id);
+    if (typeof req.body?.activo !== "boolean") throw errorValidacion("Indica el estado del doctor.");
+    await transaccion(async cliente => {
+      await bloquearAgenda(cliente,id);
+      const actual=await cliente.query("SELECT usuario_id FROM public.doctores WHERE id=$1",[id]);
+      if(!actual.rowCount) throw errorHttp("El doctor no existe.",404);
+      if(!req.body.activo) {
+        const citas=await cliente.query(`SELECT id, to_char(fecha_hora AT TIME ZONE 'America/El_Salvador','YYYY-MM-DD HH24:MI') AS inicio
+          FROM public.citas WHERE doctor_id=$1 AND estado IN ('pendiente','confirmada') AND fecha_hora_fin>clock_timestamp() ORDER BY fecha_hora`,[id]);
+        if(citas.rowCount) throw errorHttp("Reprograma o cancela primero las citas vigentes: "+citas.rows.map(c=>`#${c.id} (${c.inicio})`).join(", "),409);
+      }
+      await cliente.query("UPDATE public.doctores SET activo=$1 WHERE id=$2",[req.body.activo,id]);
+      await cliente.query("UPDATE public.usuarios SET activo=$1,version_sesion=version_sesion+1 WHERE id=$2 AND rol='doctor'",[req.body.activo,actual.rows[0].usuario_id]);
+      await auditar(cliente,req.usuario.id,req.body.activo?"activar_doctor":"desactivar_doctor","doctor",id);
+    });
+    res.json({correcto:true,mensaje:"Estado del doctor actualizado. Se conservaron sus horarios y registros."});
+  } catch(error) { next(error); }
 });
 
 router.use((error, req, res, next) => {

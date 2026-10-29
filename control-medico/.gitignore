@@ -1,0 +1,6 @@
+respaldos/
+tmp/
+node_modules/
+frontend/dist/
+.env
+*.log

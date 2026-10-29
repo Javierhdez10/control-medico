@@ -1,3 +1,7 @@
+import Password from "./Password.jsx";
+import Usuarios from "./Usuarios.jsx";
+import Auditoria from "./Auditoria.jsx";
+import Recordatorios from "./Recordatorios.jsx";
 import { useEffect, useState } from "react";
 import { consultarApi } from "./api.js";
 import Agenda from "./Agenda.jsx";
@@ -6,6 +10,9 @@ import Historial from "./Historial.jsx";
 import Cobros from "./Cobros.jsx";
 import Dashboard from "./Dashboard.jsx";
 import Doctores from "./Doctores.jsx";
+import CuentaPaciente from "./CuentaPaciente.jsx";
+import AgendaPaciente from "./AgendaPaciente.jsx";
+import Reportes from "./Reportes.jsx";
 import "./panel.css";
 
 const roles = {
@@ -62,6 +69,11 @@ function Icono({ nombre }) {
   const trazos = {
     inicio: "M3 10 12 3l9 7M5 9v12h5v-7h4v7h5V9",
     dashboard: "M5 20V10M12 20V4M19 20v-7",
+    cuenta: "M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8M4 21v-3a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v3",
+    usuarios: "M5 21v-3a7 7 0 0 1 14 0v3M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8",
+    auditoria: "M4 3h16v18H4zM8 8h8M8 12h8M8 16h5",
+    recordatorios: "M3 5h18v14H3zM3 5l9 8 9-8",
+    reportes: "M5 20V10M12 20V4M19 20v-7",
     pacientes:
       "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
     doctores:
@@ -97,6 +109,8 @@ export default function Panel({
 }) {
   const esAdmin = sesion.usuario.rol === "admin";
   const esDoctor = sesion.usuario.rol === "doctor";
+  const esPaciente = sesion.usuario.rol === "paciente";
+  const [cuentaPaciente, setCuentaPaciente] = useState(null);
 
   const puedeGestionar = ["admin", "recepcionista"].includes(
     sesion.usuario.rol
@@ -107,7 +121,7 @@ export default function Panel({
   );
 
   const [vista, setVista] = useState(
-    esDoctor ? "agenda" : puedeGestionar ? "dashboard" : "inicio"
+    esDoctor || esPaciente ? "agenda" : puedeGestionar ? "dashboard" : "inicio"
   );
 
   const [accesoHistorial, setAccesoHistorial] = useState({
@@ -376,8 +390,8 @@ export default function Panel({
       : []),
     {
       id: "agenda",
-      texto: esDoctor ? "Mi agenda" : "Agenda",
-      habilitado: puedeGestionar || esDoctor
+      texto: esPaciente ? "Mis citas" : esDoctor ? "Mi agenda" : "Agenda",
+      habilitado: puedeGestionar || esDoctor || esPaciente
     },
     {
       id: "historial",
@@ -388,7 +402,11 @@ export default function Panel({
       id: "cobros",
       texto: "Cobros",
       habilitado: puedeGestionar
-    }
+    },
+    ...(puedeGestionar ? [{ id: "reportes", texto: "Reportes", habilitado: true }] : []),
+    ...(puedeGestionar ? [{ id: "recordatorios", texto: "Recordatorios", habilitado: true }] : []),
+    ...(esAdmin ? [{id:"usuarios",texto:"Cuentas",habilitado:true},{id:"auditoria",texto:"Registro de cambios",habilitado:true}] : []),
+    {id:"cuenta",texto:"Mi contraseña",habilitado:true}
   ];
 
   const camposPaciente = [
@@ -477,6 +495,12 @@ export default function Panel({
       </aside>
 
       <main className="area-panel">
+        {vista === "cuenta" && <Password token={sesion.token} onFinalizar={onCerrarSesion} />}
+        {vista === "usuarios" && esAdmin && <Usuarios token={sesion.token} onSesionExpirada={onSesionExpirada} />}
+        {vista === "auditoria" && esAdmin && <Auditoria token={sesion.token} onSesionExpirada={onSesionExpirada} />}
+        {vista === "recordatorios" && puedeGestionar && <Recordatorios token={sesion.token} onSesionExpirada={onSesionExpirada} />}
+        {vista === "reportes" && puedeGestionar && <Reportes token={sesion.token} onSesionExpirada={onSesionExpirada} />}
+        {vista === "agenda" && esPaciente && <AgendaPaciente token={sesion.token} onSesionExpirada={onSesionExpirada} />}
         {vista === "inicio" && (
           <>
             <header className="cabecera-modulo">
@@ -608,6 +632,7 @@ export default function Panel({
 
             {!error && (
               <section className="tarjeta listado-pacientes">
+                {cuentaPaciente && <CuentaPaciente key={cuentaPaciente.id} paciente={cuentaPaciente} token={sesion.token} onSesionExpirada={onSesionExpirada} onCerrar={() => { setCuentaPaciente(null); setRevision(n => n + 1); }} />}
                 <div className="tabla-desplazable" aria-busy={cargando}>
                   <table className="tabla-pacientes">
                     <caption className="solo-lectores">
@@ -661,6 +686,7 @@ export default function Panel({
                               >
                                 Editar
                               </button>
+                              <button type="button" className="boton-secundario" disabled={paciente.estado === "inactivo" || paciente.tiene_cuenta} onClick={() => setCuentaPaciente(paciente)}>{paciente.tiene_cuenta ? "Cuenta vinculada" : "Crear acceso"}</button>
                             </td>
                           </tr>
                         ))

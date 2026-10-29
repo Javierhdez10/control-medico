@@ -1,3 +1,4 @@
+import { auditar } from "../services/operaciones.js";
 import { Router } from "express";
 import { pool } from "../config/db.js";
 import { requerirAutenticacion } from "./auth.routes.js";
@@ -368,6 +369,7 @@ router.post("/atenciones", async (req, res, next) => {
       [citaId]
     );
 
+    await auditar(cliente, req.usuario.id, "registrar_atencion", "cita", citaId);
     await cliente.query("COMMIT");
     transaccion = false;
 

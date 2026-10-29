@@ -2,8 +2,10 @@ import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { rateLimit } from "express-rate-limit";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { pool } from "../config/db.js";
+
+import { transaccion, auditar, validarPassword, errorHttp, responderError } from "../services/operaciones.js";
 
 const router = Router();
 
@@ -71,7 +73,7 @@ router.post("/login", limiteLogin, async (req, res, next) => {
 
     const resultado = await pool.query(
       `
-        SELECT id, nombre, email, password_hash, rol, activo
+        SELECT id, nombre, email, password_hash, rol, activo, version_sesion
         FROM public.usuarios
         WHERE lower(email) = $1
       `,
@@ -93,7 +95,7 @@ router.post("/login", limiteLogin, async (req, res, next) => {
     }
 
     const token = jwt.sign(
-      {},
+      { version: usuario.version_sesion },
       secreto,
       {
         algorithm: "HS256",
@@ -164,21 +166,22 @@ export async function requerirAutenticacion(req, res, next) {
   try {
     const resultado = await pool.query(
       `
-        SELECT id, nombre, email, rol
+        SELECT id, nombre, email, rol, version_sesion
         FROM public.usuarios
         WHERE id = $1 AND activo = TRUE
       `,
       [id]
     );
 
-    if (resultado.rowCount === 0) {
+    if (resultado.rowCount === 0 || contenido.version !== resultado.rows[0].version_sesion) {
       return res.status(401).json({
         correcto: false,
         mensaje: "La cuenta no está disponible."
       });
     }
 
-    req.usuario = resultado.rows[0];
+    const { version_sesion, ...usuario } = resultado.rows[0];
+    req.usuario = usuario;
     next();
   } catch (error) {
     next(error);
@@ -192,4 +195,41 @@ router.get("/me", requerirAutenticacion, (req, res) => {
   });
 });
 
+const limitePassword = rateLimit({ windowMs: 15 * 60 * 1000, limit: 15, standardHeaders: "draft-8", legacyHeaders: false,
+  message: { correcto: false, mensaje: "Demasiados intentos. Espera 15 minutos." } });
+router.post("/password", limitePassword, requerirAutenticacion, async (req,res,next) => {
+  try {
+    const nueva = validarPassword(req.body?.nueva);
+    if (typeof req.body?.actual !== "string" || Buffer.byteLength(req.body.actual,"utf8") > 72) throw errorHttp("Introduce tu contraseña actual.");
+    await transaccion(async cliente => {
+      const resultado = await cliente.query("SELECT password_hash FROM public.usuarios WHERE id=$1 AND activo FOR UPDATE",[req.usuario.id]);
+      if (!resultado.rowCount || !await bcrypt.compare(req.body.actual,resultado.rows[0].password_hash)) throw errorHttp("La contraseña actual no coincide.",400);
+      await cliente.query("UPDATE public.usuarios SET password_hash=$1, version_sesion=version_sesion+1 WHERE id=$2",[await bcrypt.hash(nueva,12),req.usuario.id]);
+      await cliente.query("UPDATE public.recuperaciones SET usado_en=clock_timestamp() WHERE usuario_id=$1 AND usado_en IS NULL",[req.usuario.id]);
+      await auditar(cliente,req.usuario.id,"cambiar_password","usuario",req.usuario.id);
+    });
+    res.json({correcto:true,mensaje:"Contraseña actualizada. Inicia sesión nuevamente en tus dispositivos."});
+  } catch(error) { next(error); }
+});
+router.post("/recuperar", limitePassword, async (req,res,next) => {
+  try {
+    const nueva = validarPassword(req.body?.nueva);
+    const codigo = req.body?.codigo;
+    if (typeof codigo !== "string" || !/^[a-f0-9]{64}$/i.test(codigo)) throw errorHttp("El código no es válido o ha vencido.");
+    const hash = createHash("sha256").update(codigo).digest("hex");
+    await transaccion(async cliente => {
+      const referencia = await cliente.query("SELECT usuario_id FROM public.recuperaciones WHERE codigo_hash=$1",[hash]);
+      if (!referencia.rowCount) throw errorHttp("El código no es válido o ha vencido.");
+      const id = referencia.rows[0].usuario_id;
+      const usuario = await cliente.query("SELECT id FROM public.usuarios WHERE id=$1 AND activo FOR UPDATE",[id]);
+      const resultado = await cliente.query("UPDATE public.recuperaciones SET usado_en=clock_timestamp() WHERE codigo_hash=$1 AND usado_en IS NULL AND vence_en>clock_timestamp() RETURNING id",[hash]);
+      if (!usuario.rowCount || !resultado.rowCount) throw errorHttp("El código no es válido o ha vencido.");
+      await cliente.query("UPDATE public.usuarios SET password_hash=$1,version_sesion=version_sesion+1 WHERE id=$2",[await bcrypt.hash(nueva,12),id]);
+      await cliente.query("UPDATE public.recuperaciones SET usado_en=clock_timestamp() WHERE usuario_id=$1 AND usado_en IS NULL",[id]);
+      await auditar(cliente,id,"recuperar_password","usuario",id);
+    });
+    res.json({correcto:true,mensaje:"Contraseña restablecida. Ya puedes iniciar sesión."});
+  } catch(error) { next(error); }
+});
+router.use(responderError);
 export default router;

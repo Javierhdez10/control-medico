@@ -1,5 +1,7 @@
+import useConfirmacion from "./useConfirmacion.jsx";
 import { useEffect, useState } from "react";
 import { consultarApi } from "./api.js";
+import HorariosDoctor from "./HorariosDoctor.jsx";
 import "./doctores.css";
 
 const diasSemana = [
@@ -37,7 +39,9 @@ export default function Doctores({
   onSesionExpirada,
   onOcupado
 }) {
+  const [solicitar, dialogo] = useConfirmacion();
   const [vista, setVista] = useState("lista");
+  const [doctorHorario, setDoctorHorario] = useState(null);
   const [busqueda, setBusqueda] = useState("");
   const [filtro, setFiltro] = useState("");
   const [pagina, setPagina] = useState(1);
@@ -275,14 +279,7 @@ export default function Doctores({
       }
     }
 
-    if (
-      cambiaCorreo &&
-      !window.confirm(
-        "El doctor deberá utilizar el nuevo correo para iniciar sesión. ¿Guardar este cambio?"
-      )
-    ) {
-      return;
-    }
+    if(cambiaCorreo && !await solicitar({titulo:"Cambiar correo de acceso",descripcion:"El doctor utilizará el nuevo correo para iniciar sesión. Se conservarán su contraseña y sus registros.",boton:"Guardar cambios"})) return;
 
     setGuardando(true);
     onOcupado(true);
@@ -346,8 +343,20 @@ export default function Doctores({
     }
   }
 
+  async function cambiarEstadoDoctor(doctor) {
+    const activo = !doctor.disponible;
+    if(!await solicitar({titulo:activo ? "Activar doctor" : "Desactivar doctor",descripcion:`${doctor.nombre}. ${activo ? "Podrá recibir nuevas citas e iniciar sesión." : "Dejará de recibir citas y se cerrarán sus sesiones. Primero debes resolver sus citas vigentes."}`})) return;
+    onOcupado(true); setGuardando(true); setErrorLista("");
+    try {
+      const resultado=await consultarApi(`/api/doctores/${doctor.id}/estado`,{token:sesion.token,method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({activo})});
+      setAviso(resultado.mensaje); setRevision(n=>n+1);
+    } catch(error) { if(error.status===401) onSesionExpirada(); else setErrorLista(error.message); }
+    finally {onOcupado(false);setGuardando(false);}
+  }
   return (
     <section className="modulo-doctores">
+      {dialogo}
+      {doctorHorario ? <HorariosDoctor key={doctorHorario.id} doctor={doctorHorario} token={sesion.token} onSesionExpirada={onSesionExpirada} onOcupado={onOcupado} onCerrar={() => setDoctorHorario(null)} onGuardado={mensaje => { setDoctorHorario(null); setAviso(mensaje); setRevision(n => n + 1); }} /> : <>
       <header className="cabecera-modulo">
         <div>
           <h1>
@@ -500,6 +509,8 @@ export default function Doctores({
                         >
                           Editar datos
                         </button>
+                        <button type="button" className="boton-secundario" disabled={ocupado} onClick={() => setDoctorHorario(doctor)}>Editar horarios</button>
+                        <button type="button" className="boton-secundario" disabled={ocupado} onClick={() => cambiarEstadoDoctor(doctor)}>{doctor.disponible ? "Desactivar" : "Activar"}</button>
 
                         <button
                           type="button"
@@ -807,6 +818,7 @@ export default function Doctores({
           </fieldset>
         </form>
       )}
+      </>}
     </section>
   );
 }

@@ -1,3 +1,4 @@
+import useConfirmacion from "./useConfirmacion.jsx";
 import { useEffect, useState } from "react";
 import { consultarApi } from "./api.js";
 import "./agenda.css";
@@ -72,6 +73,7 @@ function dinero(valor) {
 }
 
 export default function Agenda({ token, onSesionExpirada }) {
+  const [solicitar, dialogo] = useConfirmacion();
   const [doctores, setDoctores] = useState([]);
   const [doctorId, setDoctorId] = useState("");
   const [fecha, setFecha] = useState(hoyElSalvador);
@@ -175,11 +177,12 @@ export default function Agenda({ token, onSesionExpirada }) {
     let vigente = true;
     let temporizador;
 
-    setCargandoCitas(true);
-    setErrorCitas("");
-    setCitas([]);
-
-    async function cargarCitas() {
+    async function cargarCitas(inicial = false) {
+      if (inicial) {
+        setCargandoCitas(true);
+        setErrorCitas("");
+        setCitas([]);
+      }
       try {
         const parametros = new URLSearchParams({
           doctor_id: doctorId,
@@ -211,7 +214,7 @@ export default function Agenda({ token, onSesionExpirada }) {
       }
     }
 
-    void cargarCitas();
+    void cargarCitas(true);
 
     return () => {
       vigente = false;
@@ -294,11 +297,12 @@ export default function Agenda({ token, onSesionExpirada }) {
     let vigente = true;
     let temporizador;
 
-    setCargandoHorarios(true);
-    setErrorHorarios("");
-    setResultadoHorarios(null);
-
-    async function cargarHorarios() {
+    async function cargarHorarios(inicial = false) {
+      if (inicial) {
+        setCargandoHorarios(true);
+        setErrorHorarios("");
+        setResultadoHorarios(null);
+      }
       try {
         const parametros = new URLSearchParams({
           fecha,
@@ -355,7 +359,7 @@ export default function Agenda({ token, onSesionExpirada }) {
       }
     }
 
-    void cargarHorarios();
+    void cargarHorarios(true);
 
     return () => {
       vigente = false;
@@ -462,15 +466,7 @@ export default function Agenda({ token, onSesionExpirada }) {
       return;
     }
 
-    if (
-      esReprogramacion &&
-      !window.confirm(
-        `¿Reprogramar la cita de ${paciente.nombre} para el ` +
-        `${fecha} a las ${horaElegida}, con duración de ${duracion} minutos?`
-      )
-    ) {
-      return;
-    }
+    if (esReprogramacion && !await solicitar({titulo:"Reprogramar cita",descripcion:`Paciente: ${paciente.nombre}\nNueva fecha: ${fecha}, ${horaElegida}\nDuración: ${duracion} minutos`,boton:"Guardar reprogramación"})) return;
 
     setProcesando(true);
     setErrorAccion("");
@@ -531,36 +527,14 @@ export default function Agenda({ token, onSesionExpirada }) {
       return;
     }
 
-    const cuerpo = { estado };
-
-    if (estado === "cancelada") {
-      const motivoCancelacion = window.prompt(
-        `Motivo de cancelación de la cita de ${cita.paciente}:`
-      );
-
-      if (motivoCancelacion === null) {
-        return;
-      }
-
-      if (
-        !motivoCancelacion.trim() ||
-        motivoCancelacion.trim().length > 1000
-      ) {
-        setErrorAccion(
-          "Escribe un motivo de cancelación de entre 1 y 1000 caracteres."
-        );
-        return;
-      }
-
-      cuerpo.motivo_cancelacion = motivoCancelacion.trim();
-    }
-
-    if (
-      estado === "confirmada" &&
-      !window.confirm(`¿Confirmar la cita de ${cita.paciente}?`)
-    ) {
-      return;
-    }
+    const respuesta = await solicitar({
+      titulo: estado === "confirmada" ? "Confirmar cita" : "Cancelar cita",
+      descripcion: `Paciente: ${cita.paciente}\nFecha: ${fechaHora(cita.fecha_hora)}\nDuración: ${cita.duracion} minutos\nImporte: ${cita.importe_pendiente ? "Por confirmar" : dinero(cita.importe_total)}`,
+      campos: estado === "cancelada" ? [{nombre:"motivo_cancelacion",etiqueta:"Motivo de cancelación",maxLength:1000}] : cita.importe_pendiente ? [{nombre:"importe_total",etiqueta:"Importe total en USD",tipo:"number",min:"0",step:"0.01"}] : [],
+      boton: estado === "cancelada" ? "Cancelar cita" : "Confirmar cita"
+    });
+    if(!respuesta) return;
+    const cuerpo = {estado,...respuesta};
 
     setProcesando(true);
     setErrorAccion("");
@@ -597,6 +571,7 @@ export default function Agenda({ token, onSesionExpirada }) {
 
   return (
     <section className="modulo-agenda">
+      {dialogo}
       <header className="cabecera-modulo">
         <div>
           <h1>
@@ -802,7 +777,7 @@ export default function Agenda({ token, onSesionExpirada }) {
                       <h3>{cita.paciente}</h3>
                       <p>{cita.motivo}</p>
                       <span>
-                        {cita.duracion} min · {dinero(cita.importe_total)}
+                        {cita.duracion} min · {cita.importe_pendiente ? "Importe por confirmar" : dinero(cita.importe_total)}
                         {" · "}Cita #{cita.id}
                       </span>
 
@@ -889,7 +864,7 @@ export default function Agenda({ token, onSesionExpirada }) {
                 </p>
                 <p>
                   <strong>Importe:</strong>{" "}
-                  {dinero(citaEditando.importe_total)}
+                  {citaEditando.importe_pendiente ? "Importe por confirmar" : dinero(citaEditando.importe_total)}
                 </p>
               </div>
             ) : (

@@ -1,0 +1,23 @@
+.dialogo-clinica { width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow:auto; border:1px solid var(--borde); border-radius:10px; padding:28px; background:var(--blanco); color:var(--texto); box-shadow:0 12px 50px rgb(38 50 71 / 18%); }
+.dialogo-clinica::backdrop { background:rgb(38 50 71 / 45%); }
+.dialogo-clinica h2 { margin-top:0; }
+.dialogo-clinica .descripcion { white-space:pre-line; line-height:1.6; }
+.tarjeta-gestion { padding:24px; margin-bottom:20px; overflow-wrap:anywhere; }
+.acciones-flex { display:flex; flex-wrap:wrap; gap:10px; margin:16px 0; align-items:center; }
+.acciones-flex .boton-principal { width:auto; }
+.acciones-flex > input { border:1px solid var(--borde); border-radius:8px; padding:10px 12px; background:var(--blanco); color:var(--texto); }
+.filtros-citas { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; }
+.filtros-citas [aria-pressed="true"] { color:var(--principal); border-color:var(--principal); background:#effbf8; }
+.codigo-recuperacion { display:block; overflow-wrap:anywhere; user-select:all; padding:16px; background:var(--fondo); border:1px solid var(--borde); }
+.estado-vacio { color:var(--secundario); padding:24px 0; }
+.rejilla-gestion { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+input, select, textarea { min-width:0; max-width:100%; }
+button, input, select, textarea { font:inherit; }
+select:focus-visible, textarea:focus-visible { outline:3px solid #99e4dc; outline-offset:3px; }
+.tabla-desplazable { max-width:100%; overflow-x:auto; }
+.paginacion { flex-wrap:wrap; gap:12px; }
+.paginacion > div { flex-wrap:wrap; }
+.detalle-cita { min-width:0; }
+@media(max-width:600px) { .bloque-cita { flex-direction:column; align-items:stretch; } .acciones-cita { display:flex; flex-wrap:wrap; width:100%; } .acciones-cita button { flex:1; } }
+@media(max-width:700px) { .rejilla-gestion { grid-template-columns:1fr; } .doc-intervalo { grid-template-columns: minmax(0,1fr) minmax(0,1fr); } }
+@media(max-width:480px) { .dialogo-clinica { padding:20px; } .tarjeta-agenda,.tarjeta-gestion { padding:16px; } .filtros-agenda { grid-template-columns:minmax(0,1fr); } .acciones-formulario { justify-content:stretch; } .acciones-formulario button { flex:1; } }
